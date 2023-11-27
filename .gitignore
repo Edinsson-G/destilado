@@ -1,0 +1,10 @@
+*.pyc
+*.ipynb_checkpoints/
+.mat
+data/
+servidor.sh
+Datasets/
+resultados/
+.vscode/
+Dataset_Contensation.ipynb
+entorno/
