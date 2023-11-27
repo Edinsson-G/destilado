@@ -1,27 +1,5 @@
-import os
-from ignite.metrics import Accuracy
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
 import torch
-import secrets
-from torch.utils.data import Dataset,TensorDataset, DataLoader
-from torchvision import datasets, transforms
-import matplotlib.pyplot as plt
-from tqdm.notebook import tqdm
-from torchinfo import summary
-import copy
-import torch.optim as optim
-import time
-from datasets import get_dataset,HyperX
-from utils import build_dataset,sample_gt
-from nn import Baseline
-import scipy.io as io
-from models import get_model
-import random
-import math
 from datos import *
-from entrenamiento import train
 #En este archivo se implementan 3 funciones de python relacionadas con la función de costo del algoritmo de destilado
 
 #las 2 modalidades de función de perdida hacen uso de esta función

@@ -1,8 +1,6 @@
 import os
 import torch.nn as nn
 import torch
-import secrets
-from torch.utils.data import TensorDataset
 from torchinfo import summary
 import copy
 from models import get_model
@@ -10,6 +8,9 @@ from perdida import *
 from datos import *
 from entrenamiento import train
 import argparse
+import numpy as np
+from datasets import HyperX
+from torch.utils.data import TensorDataset, DataLoader
 #configurar argumentos
 parser=argparse.ArgumentParser(description="Destilar imagenes hiperespectrales")
 parser.add_argument("--modelo",
@@ -43,25 +44,32 @@ parser.add_argument("--iteraciones",
                     type=int,
                     help="Cantidad total de iteraciones a realizar.",
                     default=500)
+parser.add_argument(
+    "--inicializacion",
+    type=str,
+    choices=["muestreo","aleatoriedad"],
+    help="Inicialización de las imágenes destiladas, muestreo significa seleccionar aleatoriamente muestras del conjunto de entrenamiento original y aleatoriedad significa inicializarlas siguiendo una distribución uniforme con números entre 0 y 1.",
+    default="aleatoriedad"
+)
 parser.add_argument("--carpetaDestino",
                     type=str,
-                    default="Modelo "+parser.parse_args().modelo+" conjunto "+parser.parse_args().conjunto+" ipc "+parser.parse_args().ipc+" ritmo de aprendizaje "+parser.parse_args().lrImg,
+                    default="Modelo "+parser.parse_args().modelo+" conjunto "+parser.parse_args().conjunto+" ipc "+str(parser.parse_args().ipc)+" ritmo de aprendizaje "+str(parser.parse_args().lrImg),
                     help="Nombre de la subcarpeta en la que se almacenarán los resultados del algoritmo, debe estar en el directorio /resultados, si no existe entoces se creará.")
-device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
+device=torch.device(
+    "cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo)
+)
 print("Algoritmo ejecutandose en",device)
-#crear carpeta en la que se guardarán los resultados
-carpeta="resultados/"
 #si se especificó una semilla entonces configurarla
 if parser.parse_args().semilla!=None:
    torch.manual_seed(parser.parse_args().semilla)
+#crear carpeta en la que se guardarán los resultados
+carpeta="resultados"
+if carpeta not in os.listdir('.'):
+    os.mkdir(carpeta)
 #obtener modelos, optimizadores y datos
-ruta=carpeta+parser.parse_args().carpetaDestino+'/'
+ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
 #lista con el nombre de algunas varibales a guardar o cargar segun sea el caso
-para_guardar=["dst_train",
-              "dst_test",
-              "dst_val",
-              "train_loader",
-              "test_loader",
+para_guardar=["test_loader",
               "val_loader",
               "hiperparametros",
               "criterion",
@@ -73,23 +81,55 @@ para_guardar=["dst_train",
               "net",
               "indices_class"]
 if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuevo
-    (channel,
-     num_classes,
-     mean,
-     std,
-     dst_train,
-     dst_test,
-     dst_val,
-     train_loader,
-     test_loader,
-     val_loader,
-     net,
+    #carguar imagenes
+    img,gt,_,IGNORED_LABELS,_,_= get_dataset(parser.parse_args().conjunto,"Datasets/")
+    gt=np.array(gt,dtype=np.int32)
+    hiperparametros={'dataset':parser.parse_args().conjunto,
+                'model':parser.parse_args().modelo,
+                'folder':'./Datasets/',
+                'cuda':parser.parse_args().dispositivo,
+                'runs': 1,
+                'training_sample': 0.8,
+                'sampling_mode': 'random',
+                'class_balancing': False,
+                'test_stride': 1,
+                'flip_augmentation': False,
+                'radiation_augmentation': False,
+                'mixture_augmentation': False,
+                'with_exploration': False,
+                'n_classes':np.unique(gt).size,
+                'n_bands':img.shape[-1],
+                'ignored_labels':IGNORED_LABELS,
+                'device': device}
+    #redefinir las etiquetas entre 0 y num_clases puesto que se ignorará la etiqueta 0
+    if 0 in hiperparametros["ignored_labels"]:
+      gt=gt-1
+      hiperparametros["ignored_labels"]=(
+          torch.tensor(hiperparametros["ignored_labels"])-1
+          ).tolist()
+    (net,
      optimizer_net,
      criterion,
-     hiperparametros
-    )=obtener_datos(parser.parse_args().dataset,
-                          parser.parse_args().dispositivo,
-                          parser.parse_args().modelo)
+     hiperparametros)= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
+    train_gt,test_gt=sample_gt(gt,
+                               hiperparametros["training_sample"],
+                               mode=hiperparametros["sampling_mode"])
+    train_gt, val_gt = sample_gt(train_gt, 0.8, mode="random")
+    dst_train = HyperX(img, train_gt, **hiperparametros)
+    test_loader=DataLoader(HyperX(img,test_gt,**hiperparametros),
+                           batch_size=hiperparametros["batch_size"],
+                           shuffle=False)
+    val_loader= DataLoader(HyperX(img, val_gt, **hiperparametros),
+                           batch_size=hiperparametros["batch_size"],
+                           shuffle=False)
+    del test_gt,val_gt,train_gt
+    channel=img.shape[-1]
+    clases=np.unique(gt)
+    num_classes=clases.size
+    for etiqueta_ingnorada in hiperparametros["ignored_labels"]:
+        if etiqueta_ingnorada in clases:
+            num_classes=num_classes-1
+    del img,gt,clases
     ultima_iteracion=0
     ol_inic=0
     #preprocesar datos reales
@@ -98,27 +138,30 @@ if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuev
     indices_class = [[] for c in range(num_classes)]
     images_all = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))] # Save the images (1,1,28,28)
     labels_all = [int(dst_train[i][1]) for i in range(len(dst_train))] # Save the labels
+    del dst_train
     for i, lab in enumerate(labels_all): # Save the index of each class labels
         indices_class[lab].append(i)
     images_all = torch.cat(images_all, dim=0).to(device) # Cat images along the batch dimension
     labels_all = torch.tensor(labels_all, dtype=torch.long, device=device) # Make the labels a tensor
     for c in range(num_classes):
         print('class c = %d: %d real images'%(c, len(indices_class[c]))) # Prints how many labels are for each class
-    #incializar con muestras aleatorias de cada clase 
-    #etiquetas sinteticas de la forma [0,0,1,1,1,...,num_classes,num_classes,num_classes] (la cantidad real de repeticiones las determina el ipc)
     ipc=parser.parse_args().ipc
+    #etiquetas sintéticas de la forma [0,0,1,1,...,num_classes-1] cada etiqueta repitiendose ipc veces.
     label_syn=torch.repeat_interleave(torch.arange(num_classes,requires_grad=False),ipc)
-    #imagenes sintéticas
+    #Inicialización de imagenes sintéticas
     tam=(num_classes*ipc,channel)
     if hiperparametros["patch_size"]>1:
         tam=tam+(hiperparametros["patch_size"],hiperparametros["patch_size"])
-    image_syn=torch.empty(tam,device=device)
+    if parser.parse_args().inicializacion=="muestreo":
+        image_syn=torch.empty(tam,device=device)
+        import secrets
+        for i,clase in enumerate(label_syn):
+            image_syn[i]=images_all[secrets.choice(indices_class[clase])]
+        image_syn=image_syn.clone().detach().requires_grad_(True)
+    else:
+        image_syn=torch.rand(tam,requires_grad=True)
     del tam
-    for i,clase in enumerate(label_syn):
-        image_syn[i]=images_all[secrets.choice(indices_class[clase])]
     optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg) # optimizer_img for synthetic data
-    #image_syn=torch.tensor(image_syn,requires_grad=True)
-    image_syn=image_syn.clone().detach().requires_grad_(True)
     perdida_destilado=[]
     summary(net)
     hist_acc_train=[]
@@ -127,10 +170,20 @@ if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuev
     if parser.parse_args().carpetaDestino not in os.listdir(carpeta):
         os.mkdir(ruta)
     #guardar archivos necesarios para reanudar el entrenamiento
-    for nombre_variable in para_guardar:
-        #globals()[nombre_variable] devuelve la variable de nombre "nombre_variable"
-        torch.save(globals()[nombre_variable],ruta+nombre_variable)
-    torch.save(parser.parse_args().historial,ruta+"guardar_historial")
+    for variable,archivo in zip(
+        [test_loader,
+         val_loader,
+         hiperparametros,
+         criterion,
+         optimizer_img,
+         images_all,
+         labels_all,
+         label_syn,
+         net,
+         indices_class],
+         para_guardar
+    ):
+        torch.save(variable,ruta+archivo)
     if parser.parse_args().historial:
         historial_imagenes_sinteticas=[copy.deepcopy(image_syn)]
         torch.save(historial_imagenes_sinteticas,ruta+"imgs")

@@ -13,3 +13,4 @@ joblib
 pytorch-ignite
 torchinfo
 spectral
+torchvision

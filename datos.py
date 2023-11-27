@@ -59,18 +59,14 @@ def obtener_datos(conjunto,dispositivo,modelo):
       hyperparams["ignored_labels"]=etiquetas_actualizadas
     model, optimizer, loss, hyperparams = get_model(modelo,hyperparams["device"], **hyperparams)
     hyperparams["dataset"]="IndianPines"
-    train_gt, test_gt = sample_gt(gt,hyperparams["training_sample"] , mode=hyperparams["sampling_mode"])
+    train_gt, test_gt = sample_gt(gt,
+                                  hyperparams["training_sample"],
+                                  mode=hyperparams["sampling_mode"])
     train_gt, val_gt = sample_gt(train_gt, 0.8, mode="random")
-
+    
     # Generate the dataset
 
     train_dataset = HyperX(img, train_gt, **hyperparams)
-
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=hyperparams["batch_size"],
-        shuffle=False
-    )
 
     val_dataset = HyperX(img, val_gt, **hyperparams)
     val_loader = DataLoader(
@@ -92,8 +88,6 @@ def obtener_datos(conjunto,dispositivo,modelo):
     return (
         canales,
         num_clases,
-        mean,
-        std,
         train_dataset,
         test_dataset,
         val_dataset,
