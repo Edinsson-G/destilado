@@ -274,7 +274,6 @@ for it in range(ultima_iteracion,parser.parse_args().iteraciones+1):
             gw_syn = torch.autograd.grad(loss_syn, net_parameters, create_graph=True)
 
             loss += match_loss(gw_syn, gw_real,device)
-            #loss += match_loss(gw_syn, gw_real,"mse")
 
         optimizer_img.zero_grad()
         loss.backward()
