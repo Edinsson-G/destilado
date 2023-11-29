@@ -1,5 +1,5 @@
 import os
-import torch.nn as nn
+import matplotlib.pyplot as plt
 import torch
 from torchinfo import summary
 import copy
@@ -11,6 +11,7 @@ import argparse
 import numpy as np
 from datasets import HyperX
 from torch.utils.data import TensorDataset, DataLoader
+from utils import embebido
 #configurar argumentos
 parser=argparse.ArgumentParser(description="Destilar imagenes hiperespectrales")
 parser.add_argument("--modelo",
@@ -51,36 +52,22 @@ parser.add_argument(
     help="Inicialización de las imágenes destiladas, muestreo significa seleccionar aleatoriamente muestras del conjunto de entrenamiento original y aleatoriedad significa inicializarlas siguiendo una distribución uniforme con números entre 0 y 1.",
     default="aleatoriedad"
 )
-parser.add_argument("--carpetaDestino",
-                    type=str,
-                    default="Modelo "+parser.parse_args().modelo+" conjunto "+parser.parse_args().conjunto+" ipc "+str(parser.parse_args().ipc)+" ritmo de aprendizaje "+str(parser.parse_args().lrImg),
-                    help="Nombre de la subcarpeta en la que se almacenarán los resultados del algoritmo, debe estar en el directorio /resultados, si no existe entoces se creará.")
-device=torch.device(
-    "cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo)
-)
+device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
 print("Algoritmo ejecutandose en",device)
-#si se especificó una semilla entonces configurarla
-if parser.parse_args().semilla!=None:
-   torch.manual_seed(parser.parse_args().semilla)
 #crear carpeta en la que se guardarán los resultados
 carpeta="resultados"
 if carpeta not in os.listdir('.'):
     os.mkdir(carpeta)
-#obtener modelos, optimizadores y datos
-ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
 #lista con el nombre de algunas varibales a guardar o cargar segun sea el caso
-para_guardar=["test_loader",
-              "val_loader",
-              "hiperparametros",
-              "criterion",
-              "optimizer_net",
-              "optimizer_img",
-              "images_all",
-              "labels_all",
-              "label_syn",#"etiquetas"
-              "net",
-              "indices_class"]
+para_guardar=["test_loader","val_loader","hiperparametros","optimizer_img","images_all","labels_all","label_syn","indices_class"]
 if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuevo
+    parser.add_argument("--carpetaDestino",
+                    type=str,
+                    default="Modelo "+parser.parse_args().modelo+" conjunto "+parser.parse_args().conjunto+" ipc "+str(parser.parse_args().ipc)+" ritmo de aprendizaje "+str(parser.parse_args().lrImg),
+                    help="Nombre de la subcarpeta en la que se almacenarán los resultados del algoritmo, debe estar en el directorio /resultados, si no existe entoces se creará.")
+    #obtener modelos, optimizadores y datos
+    ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
+    torch.manual_seed(parser.parse_args().semilla)
     #carguar imagenes
     img,gt,_,IGNORED_LABELS,_,_= get_dataset(parser.parse_args().conjunto,"Datasets/")
     gt=np.array(gt,dtype=np.int32)
@@ -107,15 +94,17 @@ if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuev
       hiperparametros["ignored_labels"]=(
           torch.tensor(hiperparametros["ignored_labels"])-1
           ).tolist()
-    (net,
-     optimizer_net,
-     criterion,
-     hiperparametros)= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
+    net,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],
+                                                             hiperparametros["device"],
+                                                             **hiperparametros)
     train_gt,test_gt=sample_gt(gt,
                                hiperparametros["training_sample"],
                                mode=hiperparametros["sampling_mode"])
     train_gt, val_gt = sample_gt(train_gt, 0.8, mode="random")
     dst_train = HyperX(img, train_gt, **hiperparametros)
+    train_loader=DataLoader(copy.deepcopy(dst_train),
+                            batch_size=hiperparametros["batch_size"],
+                            shuffle=False)
     test_loader=DataLoader(HyperX(img,test_gt,**hiperparametros),
                            batch_size=hiperparametros["batch_size"],
                            shuffle=False)
@@ -130,6 +119,7 @@ if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuev
         if etiqueta_ingnorada in clases:
             num_classes=num_classes-1
     del img,gt,clases
+    hiperparametros["n_classes"]=num_classes
     ultima_iteracion=0
     ol_inic=0
     #preprocesar datos reales
@@ -159,83 +149,61 @@ if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuev
             image_syn[i]=images_all[secrets.choice(indices_class[clase])]
         image_syn=image_syn.clone().detach().requires_grad_(True)
     else:
-        image_syn=torch.rand(tam,requires_grad=True)
+        image_syn=torch.rand(tam,requires_grad=True,device=device)
     del tam
-    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg) # optimizer_img for synthetic data
-    perdida_destilado=[]
+    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg, momentum=0.5) # optimizer_img for synthetic data
+    hist_perdida=[]
     summary(net)
     hist_acc_train=[]
-    hist_acc_test=[]
+    hist_acc_val=[]
     #crear la carpeta si no existe
     if parser.parse_args().carpetaDestino not in os.listdir(carpeta):
         os.mkdir(ruta)
     #guardar archivos necesarios para reanudar el entrenamiento
     for variable,archivo in zip(
-        [test_loader,
-         val_loader,
-         hiperparametros,
-         criterion,
-         optimizer_img,
-         images_all,
-         labels_all,
-         label_syn,
-         net,
-         indices_class],
-         para_guardar
+        [
+            test_loader,
+            val_loader,
+            hiperparametros,
+            optimizer_img,
+            images_all,
+            labels_all,
+            label_syn,
+            indices_class
+        ],
+        para_guardar
     ):
-        torch.save(variable,ruta+archivo)
+        torch.save(variable,ruta+archivo+".pt")
+    del test_loader
     if parser.parse_args().historial:
         historial_imagenes_sinteticas=[copy.deepcopy(image_syn)]
-        torch.save(historial_imagenes_sinteticas,ruta+"imgs")
+        torch.save(historial_imagenes_sinteticas,ruta+"imgs.pt")
     else:
-        torch.save(image_syn,ruta+"imgs")
-    
-else:#se va a carguar un entrenatiento previo
-    device=torch.device("cpu"if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
-    ruta_anterior=carpeta+parser.parse_args().carpetaAnterior+'/'
-    (dst_train,
-     dst_test,
-     dst_val,
-     train_loader,
-     test_loader,
-     val_loader,
-     hiperparametros,
-     criterion,
-     optimizer_net,
-     optimizer_img,
-     images_all,
-     labels_all,
-     label_syn,
-     net,
-     indices_class)=tuple(torch.load(ruta_anterior+archivo,map_location=device)for archivo in para_guardar)
-    hiperparametros["cuda"]=parser.parse_args().dispositivo
-    hiperparametros["device"]=device
-    net.dispositivo=hiperparametros["device"]
-    ipc=int(len(label_syn)/(hiperparametros["n_classes"]-1))
-    hist_acc_train=torch.load(ruta_anterior+"accuracyEntrenamiento")
-    hist_acc_test=torch.load(ruta_anterior+"accuracyTesteo")
-    perdida_destilado=torch.load(ruta_anterior+"perdida", map_location=device)
-    ol_inic=torch.load(ruta_anterior+"ol")
-    ultima_iteracion=len(perdida_destilado)
-    image_syn=torch.load(ruta_anterior+"imgs",map_location=device)
-    if type(image_syn)==tuple:
-        image_syn=image_syn[0]
-    if torch.load(ruta_anterior+"guardar_historial"):#el entrenamiento que estamos carguando guardó el historial de imagenes destiladas
-        if parser.parse_args().historial:
-            historial_imagenes_sinteticas=copy.deepcopy(image_syn)
+        torch.save(image_syn,ruta+"imgs.pt")
+else:#se va a reanudar un entrenatiento previo
+    parser.add_argument("--carpetaDestino",
+                    type=str,
+                    default=parser.parse_args().carpetaAnterior,
+                    help="Nombre de la subcarpeta en la que se almacenarán los resultados del algoritmo, debe estar en el directorio /resultados, si no existe entoces se creará.")
+    #obtener modelos, optimizadores y datos
+    ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
+    del para_guardar[0]#no es necesario cargar test_loader
+    ruta_anterior=carpeta+'/'+parser.parse_args().carpetaAnterior+'/'
+    #restablecer el estado del generador de números pseudoaleatorios
+    torch.set_rng_state(torch.load(ruta_anterior+"tensorSemilla.pt"))
+    #carguar las variables de la lista para_guardar
+    (val_loader,hiperparametros,optimizer_img,images_all,labels_all,label_syn,indices_class,hist_perdida,hist_acc_val,hist_acc_train,image_syn)=tuple(torch.load(ruta+archivo+".pt")for archivo in para_guardar+["histPerdida","accEnt","accval","imgs"])
+    if type(image_syn)==list:
+        #en el entrenamiento anterior el argumento --model fue True, image_syn es realemente el último elemento de ese historial
+        historial_imagenes_sinteticas=copy.deepcopy(image_syn)
         image_syn=image_syn[-1]
-    else:
-        if type(image_syn)==list:
-            image_syn=image_syn[0]
-        if parser.parse_args().historial:
-            historial_imagenes_sinteticas=[copy.deepcopy(image_syn)]
-    torch.save(parser.parse_args().historial,ruta+"guardar_historial")
+    #modelo y optimizadores
+    net,optimizador_red,criterion,_= get_model(hiperparametros["model"],
+                                               hiperparametros["device"],**hiperparametros)
+    num_classes=hiperparametros["n_classes"]
+    ipc=int(len(label_syn)/hiperparametros["n_classes"])
     channel=image_syn.shape[1]
-    num_classes=hiperparametros["n_classes"]-1
 print("Los resultados se guardarán en ",ruta)
-outer_loop, inner_loop = get_loops(ipc) # Get the two hyper-parameters of outer-loop and inner-loop
-optimizer_img.zero_grad()
-criterion = nn.CrossEntropyLoss().to(device) # Loss function
 tam=(ipc, channel)
 if hiperparametros["model"]=="hamida":
     tam=(ipc,
@@ -245,6 +213,63 @@ if hiperparametros["model"]=="hamida":
          hiperparametros["patch_size"])
 elif hiperparametros["patch_size"]>1:
     tam=tam+(hiperparametros["patch_size"],hiperparametros["patch_size"])
+for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
+    net.train()
+    for parametros in list(net.parameters()):
+        parametros.requires_grad = False
+    perdida_media=0
+    #actualizar imágenes sintéticas
+    perdida=torch.tensor(0.0).to(device)
+    for clase in range(num_classes):
+        img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
+        img_sin=image_syn[clase*ipc:(clase+1)*ipc].reshape(tam)
+        salida_real=embebido(net,img_real).detach()
+        output_sin=embebido(net,img_sin)
+        perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)
+    optimizer_img.zero_grad()
+    perdida.backward()
+    print(image_syn.grad)
+    optimizer_img.step()
+    perdida_media+=perdida.item()
+    perdida_media/=(num_classes)
+    #cada 50 iteraciones se hará un entrenamiento real para evaluar el accuracy
+    """
+    if iteracion%50==0 or iteracion==parser.parse_args().iteraciones:
+        for parametros in list(net.parameters()):
+            parametros.requires_grad = True
+        acc_entr,acc_test=train(net,
+                                optimizador_red,
+                                criterion,
+                                train_loader,
+                                400,
+                                test_loader=val_loader,
+                                device=device)
+        hist_acc_train.append(acc_entr)
+        hist_acc_val.append(acc_test)
+        torch.save(hist_acc_train,ruta+"accuracyEntrenamiento.pt")
+        torch.save(hist_acc_val,ruta+"accuracyTesteo.pt")
+    """
+    #reinicializar los pesos de la red
+    net,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],
+                                                             hiperparametros["device"],
+                                                             **hiperparametros)
+    #guardar registros necesarios
+    hist_perdida.append(perdida_media)
+    if parser.parse_args().historial:
+        historial_imagenes_sinteticas.append(copy.deepcopy(image_syn))
+        torch.save(historial_imagenes_sinteticas,ruta+"imgs.pt")
+    else:
+        torch.save(image_syn,ruta+"imgs.pt")
+    
+    for variable,archivo in zip(
+        [torch.get_rng_state(),hist_perdida,hist_acc_val,hist_acc_train],
+        ["tensorSemilla","histPerdida","accEnt","accval"]
+    ):
+        torch.save(variable,ruta+archivo+".pt")
+    #cada 10 iteraciones se imprimirá el loss
+    print("Iteración",iteracion,"perdida",perdida_media)
+########################################################################################
+"""
 for it in range(ultima_iteracion,parser.parse_args().iteraciones+1):
     ''' Train synthetic data '''
     print("Iteración",it)
@@ -323,17 +348,14 @@ for it in range(ultima_iteracion,parser.parse_args().iteraciones+1):
     hist_acc_test.append(acc_test_acum/outer_loop)
     torch.save(hist_acc_train,ruta+"accuracyEntrenamiento")
     torch.save(hist_acc_test,ruta+"accuracyTesteo")
-    print("iteracion:",
-          it,
-          "perdida promedio:",
-          perdida_destilado[-1],
-          "accuracy promedio de entrenamiento:",
-          hist_acc_train[-1],
-          "accuracy promedio de validación:",
-          hist_acc_test[-1])
+    print("iteracion:",it,
+          "perdida promedio:",perdida_destilado[-1],
+          "accuracy promedio de entrenamiento:",hist_acc_train[-1],
+          "accuracy promedio de validación:",hist_acc_test[-1])
 
     ultima_iteracion=ultima_iteracion+1
     net,optimizer_net,temp1,temp2=get_model(hiperparametros["model"],device, **hiperparametros)
     del temp1,temp2
     torch.save(net,ruta+"net")
     torch.save(optimizer_net,ruta+"optimizer_net")
+"""

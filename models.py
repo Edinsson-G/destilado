@@ -372,6 +372,11 @@ class HamidaEtAl(nn.Module):
             _, t, c, w, h = x.size()
         return t * c * w * h
 
+    def embed(self, x):
+            x = self.features(x)
+            x = x.view(x.size(0), -1)
+            return x
+
     def forward(self, x):
         x=x.to(self.dispositivo)
         if len(x.shape)<5:
