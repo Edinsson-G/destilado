@@ -542,5 +542,6 @@ def camel_to_snake(name):
     s = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
     return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s).lower()
 def embebido(red,entrada):
-    entrada=red(entrada)
+    for capa in list(red.children())[:-2]:
+        entrada=capa(entrada)
     return entrada.view(entrada.size(0),-1)

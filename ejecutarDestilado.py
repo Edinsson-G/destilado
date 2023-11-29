@@ -228,7 +228,6 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
         perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)
     optimizer_img.zero_grad()
     perdida.backward()
-    print(image_syn.grad)
     optimizer_img.step()
     perdida_media+=perdida.item()
     perdida_media/=(num_classes)
