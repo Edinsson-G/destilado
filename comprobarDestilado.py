@@ -6,29 +6,28 @@ from entrenamiento import train
 from torch.utils.data import TensorDataset,DataLoader
 import secrets
 parser=argparse.ArgumentParser(description="realizar entrenamientos para comprobar el funcionamiento del destilado.")
-parser.add_argument("--modelo",
-                    type=str,
-                    choices=["nn","hamida","chen"],
-                    required=True,
-                    help="Modelo de red neuronal en el que se probarán los datos destilados.")
 parser.add_argument("--carpetaAnterior",
                     type=str,
                     required=True,
                     help="Nombre de la carpeta en la que se almacenan los datos que se utilizarán para el entrenamiento, debe estar dentro de la carpeta resultados.")
 parser.add_argument("--carpetaDestino",
                     type=str,
-                    default=None,
-                    help="Carpeta en la que se guardarán los registros de este entrenamiento, si no se especifica no se guardarán en disco.")
+                    default=parser.parse_args().carpetaAnterior,
+                    help="Carpeta en la que se guardarán los registros de este entrenamiento")
 parser.add_argument("--dispositivo",
                     type=int,
-                    required=True,
+                    default=-1,
                     help="Indice del dispositivo en el que se realizará el destilado, si es negativo se usará la CPU.")
-parser.add_argument("--conjunto",
+parser.add_argument("--semilla",
+                    type=int,
+                    default=18,
+                    help="semilla pseudoaleatoria para inicializar los pesos.")
+parser.add_argument("--tipoConjunto",
                     type=str,
-                    choices=["IndianPines","PaviaC","PaviaU","Botswana"],
-                    required=True,
-                    help="Nombre del conjunto de datos destilado, en caso de proporcionarse se utilizará para comparar la media y desviación de los datos originales y destilados.")
-torch.manual_seed(0)
+                    choices=["real","sintetico"],
+                    default="sintetico",
+                    help="Especificar si se realizará el entrenamiento con los datos reales (archivo images_all.pt y labels_all.pt) o sintéticos (imgs.pt y label_syn.pt)")
+torch.manual_seed(parser.parse_args().semilla)
 dispositivo=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
 print("Algoritmo ejecutándose en",dispositivo,"\n\n")
 carpeta="resultados/"

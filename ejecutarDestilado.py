@@ -231,23 +231,6 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
     optimizer_img.step()
     perdida_media+=perdida.item()
     perdida_media/=(num_classes)
-    #cada 50 iteraciones se hará un entrenamiento real para evaluar el accuracy
-    """
-    if iteracion%50==0 or iteracion==parser.parse_args().iteraciones:
-        for parametros in list(net.parameters()):
-            parametros.requires_grad = True
-        acc_entr,acc_test=train(net,
-                                optimizador_red,
-                                criterion,
-                                train_loader,
-                                400,
-                                test_loader=val_loader,
-                                device=device)
-        hist_acc_train.append(acc_entr)
-        hist_acc_val.append(acc_test)
-        torch.save(hist_acc_train,ruta+"accuracyEntrenamiento.pt")
-        torch.save(hist_acc_val,ruta+"accuracyTesteo.pt")
-    """
     #reinicializar los pesos de la red
     net,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],
                                                              hiperparametros["device"],
@@ -265,7 +248,6 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
         ["tensorSemilla","histPerdida","accEnt","accval"]
     ):
         torch.save(variable,ruta+archivo+".pt")
-    #cada 10 iteraciones se imprimirá el loss
     print("Iteración",iteracion,"perdida",perdida_media)
 ########################################################################################
 """
