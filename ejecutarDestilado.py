@@ -6,7 +6,6 @@ import copy
 from models import get_model
 from perdida import *
 from datos import *
-from entrenamiento import train
 import argparse
 import numpy as np
 from datasets import HyperX
@@ -102,16 +101,15 @@ if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuev
                                mode=hiperparametros["sampling_mode"])
     train_gt, val_gt = sample_gt(train_gt, 0.8, mode="random")
     dst_train = HyperX(img, train_gt, **hiperparametros)
-    train_loader=DataLoader(copy.deepcopy(dst_train),
-                            batch_size=hiperparametros["batch_size"],
-                            shuffle=False)
-    test_loader=DataLoader(HyperX(img,test_gt,**hiperparametros),
-                           batch_size=hiperparametros["batch_size"],
-                           shuffle=False)
-    val_loader= DataLoader(HyperX(img, val_gt, **hiperparametros),
-                           batch_size=hiperparametros["batch_size"],
-                           shuffle=False)
-    del test_gt,val_gt,train_gt
+    dst_test=HyperX(img,test_gt,**hiperparametros)
+    test_loader=DataLoader(dst_test,
+                           batch_size=len(dst_test),
+                           shuffle=True)
+    dst_val=HyperX(img, val_gt, **hiperparametros)
+    val_loader= DataLoader(dst_val,
+                           batch_size=len(dst_val),
+                           shuffle=True)
+    del test_gt,val_gt,train_gt,dst_val,dst_test
     channel=img.shape[-1]
     clases=np.unique(gt)
     num_classes=clases.size
