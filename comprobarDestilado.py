@@ -60,6 +60,10 @@ if parser.parse_args().tipoDatos=="destilados":
 else:
     img=torch.load(ruta_anterior+"images_all.pt",map_location=hiperparametros["device"])
     etiquetas=torch.load(ruta_anterior+"labels_all.pt",map_location=hiperparametros["device"])
+img.requires_grad_(False)
+maxi=torch.max(img)
+if maxi>1:
+    img=img/maxi
 #mostrar y guaradar estadisticos
 with open(f"EstadisticosDatos{parser.parse_args().tipoDatos}.txt", "w") as archivotxt:
     print(f"media: {torch.mean(img)}\ndesviación:{torch.std(img)}",file=archivotxt)
