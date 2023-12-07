@@ -9,6 +9,7 @@ from models import get_model
 import math
 from perdida import *
 import os
+import warnings
 #definir hiperparametros a utilizar según el modelo
 class TensorDataset(Dataset):
     def __init__(self, images, labels): # images: n x c x h x w tensor
@@ -91,7 +92,6 @@ def obtener_datos(conjunto,dispositivo,modelo):
         train_dataset,
         test_dataset,
         val_dataset,
-        train_loader,
         test_loader,
         val_loader,
         model,
@@ -215,3 +215,44 @@ def graficar(firmas,etiquetas,num_classes=None,figsize=(35,15),filas=None,column
         for i in range(columnas):
             axs[i].set_title(int(ind[i]))
     plt.show()
+def aumento(img_orig,tecnica,fact_aum=None):
+    #img_orig: tensor del lote de imagenes a aumetar
+    #fact_aum: factor de aumento (ver ayuda del archivo ejecutarDestilado.py)
+    #tecnica: nombre de la tecnica usar
+    #dispositivo: dispositivo de pytorch en el que se alojarán los tensores
+    #inicializacion de tensores aumentados
+    #tamaño de lote aumentado
+    if fact_aum>0:
+        if tecnica=="escalamiento":
+            maxi=torch.max(img_orig)
+            if maxi!=1:
+                fact_aum=1
+            else: 
+                fact_aum=0
+                warnings.warn("Los datos reales ya están entre 0 y 1, no hay nada que escalar")
+        dim_img_aum=list(img_orig.shape)
+        dim_img_aum[0]=int(dim_img_aum[0]*(1+fact_aum))
+        #inicializar tensor de imagenes aumentadas
+        dispositivo=torch.device(f"cuda:{img_orig.get_device()}"if img_orig.get_device()>=0 else "cpu")
+        img_aum=torch.empty(dim_img_aum,device=dispositivo)
+        #recorrer tensores aumentados para llenarlos
+        ind_aum=0#indice actual de los tensores aumentados
+        ind_orig=0#indice actual en el tensor de datos no aumentados
+        while ind_aum<dim_img_aum[0]:
+            #se asigna la pareja de datos original
+            img_aum[ind_aum]=img_orig[ind_orig]
+            #se asignan los datos nuevos
+            ind_aum+=1
+            for i in range(fact_aum):
+                if tecnica=="ruido":
+                    img_aum[ind_aum]=torch.clip(img_orig[ind_orig]+torch.rand(img_orig[ind_orig].shape,device=dispositivo)/10-0.05,0,1)
+                elif tecnica=="escalamiento":
+                    img_aum[ind_aum]=img_orig[ind_orig]/maxi
+                else:
+                    exit(f"Tecnica de aumento {tecnica} no conocida")
+                ind_aum+=1
+            #ind_orig=ind_orig+1
+        img_aum.requires_grad_(img_orig.requires_grad)
+    else:
+        img_aum=img_orig
+    return img_aum

@@ -11,20 +11,21 @@ import numpy as np
 from datasets import HyperX
 from torch.utils.data import TensorDataset, DataLoader
 from utils import embebido
+import warnings
 #configurar argumentos
 parser=argparse.ArgumentParser(description="Destilar imagenes hiperespectrales")
 parser.add_argument("--modelo",
                     type=str,
                     choices=["nn","hamida","lee","chen","li"],
-                    help="Nombre del modelo de red neuronal a utilizar en el destilado, es obligatorio si se quiere iniciar un nuevo destilado o si en la carpeta desde la cual se quieren cargar los datos no se encuntra un modelo, en tales casos debe ser de tipo cadena y alguna de las siguientes opciones: nn, hamida, lee, chen o li. Para mas información acerca de los modelos consulta la documentación")
+                    help="Nombre del modelo de red neuronal a utilizar en el destilado, es obligatorio si se quiere iniciar un nuevo destilado.")
 parser.add_argument("--conjunto",
                     type=str,
                     choices=["PaviaC","PaviaU","IndianPines","KSC","Botswana"],
-                    help="Nombre del conjunto de datos a destilar, es un argumento obligatorio si se va iniciar un nuevo destilado, debe ser de tipo cadena y una de las siguientes opciones: PaviaC, PaviaU, IndianPines, KSC o Botswana.")
+                    help="Nombre del conjunto de datos a destilar, obligatorio si se va a realizar un destilado nuevo.")
 parser.add_argument("--dispositivo",
                     type=int,
                     default=-1,
-                    help="Indice del dispositivo en el que se ejecutará el algoritmo, si es negativo se ejecutará en la CPU. Su valor por defecto es -1.")
+                    help="Indice del dispositivo en el que se ejecutará el algoritmo, si es negativo se ejecutará en la CPU.")
 parser.add_argument("--semilla",type=int,help="Semilla pseudoaleatorio a usar.",default=0)
 parser.add_argument("--historial",
                     type=bool,
@@ -32,10 +33,11 @@ parser.add_argument("--historial",
                     help="Si es verdadero se almacenará el historial de cambios de las firmas destiladas a lo largo de las iteraciones.")
 parser.add_argument("--carpetaAnterior",
                     type=str,
-                    help="Permite reanudar una ejecución anterior, debe ser de tipo cadena y contener la ruta en la cual se guardaron los archivos de dicha ejecucion. En caso de no querer cargar una ejecución anterior se deberá especificar el nombre de un modelo y conjunto de datos.")
+                    help="Para reanudar un destilado anterior, debe especificar el nombre de la carpeta que contiene los registros de dicho destilado.")
 parser.add_argument("--ipc",
                     type=int,
-                    help="Indices por clase, obligatorio para iniciar un destilado nuevo")
+                    default=10,
+                    help="Imagenes por clase, obligatorio para iniciar un destilado nuevo")
 parser.add_argument("--lrImg",
                     type=float,
                     default=0.01,
@@ -45,6 +47,18 @@ parser.add_argument("--iteraciones",
                     help="Cantidad total de iteraciones a realizar.",
                     default=500)
 parser.add_argument(
+    "--factAumento",
+    type=int,
+    default=1,
+    help="Factor de aumento, cantidad de muestras nuevas a generar por cada ejemplo en el aumento de datos."
+)
+parser.add_argument(
+    "--tecAumento",
+    type=str,
+    choices=["ruido","escalamiento"],
+    help="Tecnica con la que se hará el aumento de datos, obligatoria si fracAumento es positiva"
+)
+parser.add_argument(
     "--inicializacion",
     type=str,
     choices=["muestreo","aleatoriedad"],
@@ -52,6 +66,14 @@ parser.add_argument(
     default="aleatoriedad"
 )
 device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
+if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
+    exit("Se especificó un factor de aumento de aumento pero no un método de aumento.")
+elif parser.parse_args().factAumento<0:
+    exit("El factor de aumento no debe ser negativo.")
+elif (parser.parse_args().tecAumento=="ruido") and (parser.parse_args().factAumento==0):
+    warnings.warn("Se especificó la técnica de aumento de ruido; sin embargo el factor de aumento es 0, por lo que no se realizará ningún aumento.")
+elif (parser.parse_args().tecAumento=="escalamiento")and(parser.parse_args().factAumento>1):
+    warnings.warn("El método de escalamiento solamente puede duplicar el tamaño del conjunto de datos; por lo tanto se obviará el valor de factAumento y se asumirá que es 1.")
 print("Algoritmo ejecutandose en",device)
 #crear carpeta en la que se guardarán los resultados
 carpeta="resultados"
@@ -62,7 +84,7 @@ para_guardar=["test_loader","val_loader","hiperparametros","optimizer_img","imag
 if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuevo
     parser.add_argument("--carpetaDestino",
                     type=str,
-                    default="Modelo "+parser.parse_args().modelo+" conjunto "+parser.parse_args().conjunto+" ipc "+str(parser.parse_args().ipc)+" ritmo de aprendizaje "+str(parser.parse_args().lrImg),
+                    default="Modelo "+parser.parse_args().modelo+" conjunto "+parser.parse_args().conjunto+" ipc "+str(parser.parse_args().ipc)+" ritmo de aprendizaje "+str(parser.parse_args().lrImg)+" aumento "+parser.parse_args().tecAumento,
                     help="Nombre de la subcarpeta en la que se almacenarán los resultados del algoritmo, debe estar en el directorio /resultados, si no existe entoces se creará.")
     #obtener modelos, optimizadores y datos
     ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
@@ -219,8 +241,16 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
     #actualizar imágenes sintéticas
     perdida=torch.tensor(0.0).to(device)
     for clase in range(num_classes):
-        img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
-        img_sin=image_syn[clase*ipc:(clase+1)*ipc].reshape(tam)
+        img_real=aumento(
+            get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device),
+            parser.parse_args().tecAumento,
+            parser.parse_args().factAumento
+        )
+        img_sin=aumento(
+            image_syn[clase*ipc:(clase+1)*ipc].reshape(tam),
+            parser.parse_args().tecAumento,
+            parser.parse_args().factAumento
+        )
         salida_real=embebido(net,img_real).detach()
         output_sin=embebido(net,img_sin)
         perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)
