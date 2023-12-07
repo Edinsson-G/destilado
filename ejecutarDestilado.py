@@ -1,5 +1,4 @@
 import os
-import matplotlib.pyplot as plt
 import torch
 from torchinfo import summary
 import copy
@@ -9,7 +8,7 @@ from datos import *
 import argparse
 import numpy as np
 from datasets import HyperX
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import DataLoader
 from utils import embebido
 import warnings
 #configurar argumentos
@@ -65,6 +64,11 @@ parser.add_argument(
     help="Inicialización de las imágenes destiladas, muestreo significa seleccionar aleatoriamente muestras del conjunto de entrenamiento original y aleatoriedad significa inicializarlas siguiendo una distribución uniforme con números entre 0 y 1.",
     default="aleatoriedad"
 )
+parser.add_argument(
+    "--carpetaDestino",
+    type=str,
+    help="Nombre de la subcarpeta en la que se almacenarán los resultados del algoritmo, debe estar en el directorio /resultados, si no existe entoces se creará."
+)
 device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
 if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
     exit("Se especificó un factor de aumento de aumento pero no un método de aumento.")
@@ -82,12 +86,11 @@ if carpeta not in os.listdir('.'):
 #lista con el nombre de algunas varibales a guardar o cargar segun sea el caso
 para_guardar=["test_loader","val_loader","hiperparametros","optimizer_img","images_all","labels_all","label_syn","indices_class"]
 if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuevo
-    parser.add_argument("--carpetaDestino",
-                    type=str,
-                    default="Modelo "+parser.parse_args().modelo+" conjunto "+parser.parse_args().conjunto+" ipc "+str(parser.parse_args().ipc)+" ritmo de aprendizaje "+str(parser.parse_args().lrImg)+" aumento "+parser.parse_args().tecAumento,
-                    help="Nombre de la subcarpeta en la que se almacenarán los resultados del algoritmo, debe estar en el directorio /resultados, si no existe entoces se creará.")
+    if parser.parse_args().carpetaDestino!=None:
+        ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
+    else:
+        ruta=f"{carpeta}/Modelo {parser.parse_args().modelo} conjunto {parser.parse_args().conjunto} ipc {parser.parse_args().ipc} ritmo de aprendizaje {parser.parse_args().lrImg} aumento {parser.parse_args().tecAumento}"
     #obtener modelos, optimizadores y datos
-    ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
     torch.manual_seed(parser.parse_args().semilla)
     #carguar imagenes
     img,gt,_,IGNORED_LABELS,_,_= get_dataset(parser.parse_args().conjunto,"Datasets/")
@@ -201,12 +204,12 @@ if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuev
     else:
         torch.save(image_syn,ruta+"imgs.pt")
 else:#se va a reanudar un entrenatiento previo
-    parser.add_argument("--carpetaDestino",
-                    type=str,
-                    default=parser.parse_args().carpetaAnterior,
-                    help="Nombre de la subcarpeta en la que se almacenarán los resultados del algoritmo, debe estar en el directorio /resultados, si no existe entoces se creará.")
+    if parser.parse_args().carpetaDestino!=None:
+        ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
+    else:
+        #por defecto sobreeescribir en la carpeta anterior
+        ruta=carpeta+'/'+parser.parse_args().carpetaAnterior+'/'
     #obtener modelos, optimizadores y datos
-    ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
     del para_guardar[0]#no es necesario cargar test_loader
     ruta_anterior=carpeta+'/'+parser.parse_args().carpetaAnterior+'/'
     #restablecer el estado del generador de números pseudoaleatorios
