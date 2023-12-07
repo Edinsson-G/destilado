@@ -70,6 +70,7 @@ parser.add_argument(
     help="Nombre de la subcarpeta en la que se almacenarán los resultados del algoritmo, debe estar en el directorio /resultados, si no existe entoces se creará."
 )
 device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
+torch.set_default_device(device)
 if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
     exit("Se especificó un factor de aumento de aumento pero no un método de aumento.")
 elif parser.parse_args().factAumento<0:
@@ -89,7 +90,7 @@ if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuev
     if parser.parse_args().carpetaDestino!=None:
         ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
     else:
-        ruta=f"{carpeta}/Modelo {parser.parse_args().modelo} conjunto {parser.parse_args().conjunto} ipc {parser.parse_args().ipc} ritmo de aprendizaje {parser.parse_args().lrImg} aumento {parser.parse_args().tecAumento}"
+        ruta=f"{carpeta}/Modelo {parser.parse_args().modelo} conjunto {parser.parse_args().conjunto} ipc {parser.parse_args().ipc} ritmo de aprendizaje {parser.parse_args().lrImg} aumento {parser.parse_args().tecAumento}/"
     #obtener modelos, optimizadores y datos
     torch.manual_seed(parser.parse_args().semilla)
     #carguar imagenes
@@ -180,7 +181,7 @@ if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuev
     hist_acc_train=[]
     hist_acc_val=[]
     #crear la carpeta si no existe
-    if parser.parse_args().carpetaDestino not in os.listdir(carpeta):
+    if not os.path.isdir(rf"{ruta}"):
         os.mkdir(ruta)
     #guardar archivos necesarios para reanudar el entrenamiento
     for variable,archivo in zip(

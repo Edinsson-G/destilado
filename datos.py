@@ -215,6 +215,7 @@ def graficar(firmas,etiquetas,num_classes=None,figsize=(35,15),filas=None,column
         for i in range(columnas):
             axs[i].set_title(int(ind[i]))
     plt.show()
+"""
 def aumento(img_orig,tecnica,fact_aum=None):
     #img_orig: tensor del lote de imagenes a aumetar
     #fact_aum: factor de aumento (ver ayuda del archivo ejecutarDestilado.py)
@@ -256,3 +257,12 @@ def aumento(img_orig,tecnica,fact_aum=None):
     else:
         img_aum=img_orig
     return img_aum
+"""
+def aumento(imgs,tecnica,fact_aum=None):
+    copia=imgs
+    if tecnica=="ruido":
+        for _ in range(fact_aum):
+            imgs=torch.cat((imgs,copia+torch.rand(copia.shape)/10-0.05))
+    else:
+        exit("Modo de aumento desconocido.")
+    return torch.clip(imgs,0,1)

@@ -29,22 +29,23 @@ parser.add_argument(
     default="destilados",
     help="Especificar si se realizará el entrenamiento con los datos reales (archivo images_all.pt y labels_all.pt) o destilados (imgs.pt y label_syn.pt)"
 )
-carpeta="resultados/"
-ruta_anterior=carpeta+parser.parse_args().carpetaAnterior+'/'
-perdida=torch.load(ruta_anterior+"histPerdida.pt")
 parser.add_argument(
     "--indice",
     type=int,
-    default=perdida.index(min(perdida)),#se esoge el indice del menor valor de pérdida
     help="En caso que se quiera hacer el entrenamiento con imágenes sintéticas y el archivo imgs.pt contenga una lista de ellas (situación que se da en el caso que se haya especificado el atributo historial como True al momento del destilado), se sellecionarán las imágenes correspondientes a este índice"
 )
 parser.add_argument(
     "--carpetaDestino",
     type=str,
-    default=parser.parse_args().carpetaAnterior,
     help="Carpeta en la que se guardarán los registros de este entrenamiento"
 )
-del perdida
+parser.add_argument("--epocas",type=int,default=100,help="Cantidad de epocas.")
+carpeta="resultados/"
+ruta_anterior=carpeta+parser.parse_args().carpetaAnterior+'/'
+if parser.parse_args().carpetaDestino==None:
+    carpetaDestino=parser.parse_args().carpetaAnterior
+else:
+    carpetaDestino=parser.parse_args().carpetaDestino
 torch.manual_seed(parser.parse_args().semilla)
 #cargar y actualizar hiperparametros (los cambios no se sobreescribiran en hiperparametros.pt)
 hiperparametros=torch.load(ruta_anterior+"hiperparametros.pt")
@@ -55,7 +56,14 @@ print("Algoritmo ejecutándose en",hiperparametros["device"],"\n\n")
 if parser.parse_args().tipoDatos=="destilados":
     img=torch.load(ruta_anterior+"imgs.pt",map_location=hiperparametros["device"])
     if type(img)==list:
-        img=img[parser.parse_args().indice]
+        #en el destilado el parámetro historial era True
+        if parser.parse_args().indice==None:
+            #se escoge el indice de la iteración con menor pérdida
+            perdida=torch.load(ruta_anterior+"histPerdida.pt")
+            img=img[perdida.index(min(perdida))]
+            del perdida
+        else:
+            img=img[parser.parse_args().indice]
     etiquetas=torch.load(ruta_anterior+"label_syn.pt",map_location=hiperparametros["device"])
 else:
     img=torch.load(ruta_anterior+"images_all.pt",map_location=hiperparametros["device"])
@@ -80,10 +88,10 @@ for variable,archivo in zip(
                      batch_size=hiperparametros["batch_size"],
                      shuffle=True,
                      num_workers=0),
-          100,
+          parser.parse_args().epocas,
           torch.load(ruta_anterior+"test_loader.pt",map_location=hiperparametros["device"]),
           torch.load(ruta_anterior+"val_loader.pt",map_location=hiperparametros["device"]),
           hiperparametros["device"]),
     ["redEntrenada","perdida","accTrain","accVal","accTest"]
 ):
-    torch.save(variable,carpeta+parser.parse_args().carpetaDestino+f"/{archivo}Datos{parser.parse_args().tipoDatos}.pt")
+    torch.save(variable,carpeta+carpetaDestino+f"/{archivo}Datos{parser.parse_args().tipoDatos}.pt")
