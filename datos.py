@@ -258,11 +258,31 @@ def aumento(img_orig,tecnica,fact_aum=None):
         img_aum=img_orig
     return img_aum
 """
-def aumento(imgs,tecnica,fact_aum=None):
+#hacer aumento sumando ruido
+def adicion(imgs,fact_aum,etq=None):
     copia=imgs
-    if tecnica=="ruido":
-        for _ in range(fact_aum):
-            imgs=torch.cat((imgs,copia+torch.rand(copia.shape)/10-0.05))
+    copia_etq=etq
+    for _ in range(fact_aum):
+        imgs=torch.cat((imgs,copia+torch.rand(copia.shape)/10-0.05))
+        if etq!=None:
+            etq=torch.cat((etq,copia_etq))
+    if etq==None:
+        return torch.clip(imgs,0,1)
     else:
-        exit("Modo de aumento desconocido.")
-    return torch.clip(imgs,0,1)
+        return torch.clip(imgs,0,1),etq
+#multiplicar tensor por un escalar
+def multiplicacion(escalar,tensor):
+    return escalar*tensor
+#hacer aumento multiplicando o elevando a numeros aleatorios
+def noAdicion(imgs,parametros,metodo,etq=None):
+    copia=imgs
+    if metodo=="potencia":
+        nuevosDatos=torch.pow
+    elif metodo=="escalamiento":
+        nuevosDatos=multiplicacion
+    for parametro in parametros:
+        imgs=torch.cat((imgs,nuevosDatos(copia,parametro)))
+    if etq==None:
+        return imgs
+    else:
+        return imgs,torch.repeat_interleave(etq,len(parametros),0)

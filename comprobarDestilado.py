@@ -3,6 +3,7 @@ import torch
 from entrenamiento import train
 from torch.utils.data import TensorDataset,DataLoader
 from models import get_model
+from datos import aumento
 parser=argparse.ArgumentParser(description="realizar entrenamientos para comprobar el funcionamiento del destilado.")
 parser.add_argument(
     "--carpetaAnterior",
@@ -40,17 +41,31 @@ parser.add_argument(
     help="Carpeta en la que se guardarán los registros de este entrenamiento"
 )
 parser.add_argument("--epocas",type=int,default=100,help="Cantidad de epocas.")
+parser.add_argument(
+    "--tecAumento",
+    type=str,
+    choices=["ruido"],
+    default="ruido",
+    help="Técnica que se utilizará para hacer aumento de datos. Ruido consiste en sumar ruido pseudoaleatorio uniformemente distribuido en el intervalo [-0.05,0.05]"
+)
+parser.add_argument(
+    "--paramAumento",
+    type=list,
+    default=[3],
+    help="Parametros de aumento. En el caso de la tecnica de aumento ruido debe ser una lista de un único elemento entero que indica cuantas veces se deberá generar un lote de datos nuevo."
+)
 carpeta="resultados/"
 ruta_anterior=carpeta+parser.parse_args().carpetaAnterior+'/'
 if parser.parse_args().carpetaDestino==None:
     carpetaDestino=parser.parse_args().carpetaAnterior
 else:
     carpetaDestino=parser.parse_args().carpetaDestino
-torch.manual_seed(parser.parse_args().semilla)
 #cargar y actualizar hiperparametros (los cambios no se sobreescribiran en hiperparametros.pt)
 hiperparametros=torch.load(ruta_anterior+"hiperparametros.pt")
 hiperparametros["cuda"]=parser.parse_args().dispositivo
 hiperparametros["device"]=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
+torch.set_default_device(hiperparametros["device"])
+torch.manual_seed(parser.parse_args().semilla)
 print("Algoritmo ejecutándose en",hiperparametros["device"],"\n\n")
 #cargua de los datos de entrenamiento
 if parser.parse_args().tipoDatos=="destilados":
@@ -79,15 +94,18 @@ with open(f"EstadisticosDatos{parser.parse_args().tipoDatos}.txt", "w") as archi
 hiperparametros["n_classes"]=hiperparametros["n_classes"]+1
 red,optimizador,criteiron,_=get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
 #iniciar entrenamiento y guardar registros
+if parser.parse_args().tipoDatos=="destilados"and parser.parse_args().tecAumento!=None:
+    img,etiquetas=aumento(img,parser.parse_args().tecAumento,parser.parse_args().paramAumento[0],etiquetas)
 print("Iniciando entrenamiento con datos",parser.parse_args().tipoDatos)
 for variable,archivo in zip(
     train(red,
           optimizador,
           criteiron,
           DataLoader(TensorDataset(img,etiquetas),
-                     batch_size=hiperparametros["batch_size"],
-                     shuffle=True,
-                     num_workers=0),
+                    batch_size=hiperparametros["batch_size"],
+                    shuffle=True,
+                    num_workers=0,
+                    generator=torch.Generator(device=hiperparametros["device"])),
           parser.parse_args().epocas,
           torch.load(ruta_anterior+"test_loader.pt",map_location=hiperparametros["device"]),
           torch.load(ruta_anterior+"val_loader.pt",map_location=hiperparametros["device"]),

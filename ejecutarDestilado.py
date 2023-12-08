@@ -16,10 +16,12 @@ parser=argparse.ArgumentParser(description="Destilar imagenes hiperespectrales")
 parser.add_argument("--modelo",
                     type=str,
                     choices=["nn","hamida","lee","chen","li"],
+                    default="nn",
                     help="Nombre del modelo de red neuronal a utilizar en el destilado, es obligatorio si se quiere iniciar un nuevo destilado.")
 parser.add_argument("--conjunto",
                     type=str,
                     choices=["PaviaC","PaviaU","IndianPines","KSC","Botswana"],
+                    default="IndianPines",
                     help="Nombre del conjunto de datos a destilar, obligatorio si se va a realizar un destilado nuevo.")
 parser.add_argument("--dispositivo",
                     type=int,
@@ -48,13 +50,14 @@ parser.add_argument("--iteraciones",
 parser.add_argument(
     "--factAumento",
     type=int,
-    default=1,
+    default=2,
     help="Factor de aumento, cantidad de muestras nuevas a generar por cada ejemplo en el aumento de datos."
 )
 parser.add_argument(
     "--tecAumento",
     type=str,
-    choices=["ruido","escalamiento"],
+    choices=["ruido","escalamiento","potencia","None"],
+    default="ruido",
     help="Tecnica con la que se hará el aumento de datos, obligatoria si fracAumento es positiva"
 )
 parser.add_argument(
@@ -77,8 +80,6 @@ elif parser.parse_args().factAumento<0:
     exit("El factor de aumento no debe ser negativo.")
 elif (parser.parse_args().tecAumento=="ruido") and (parser.parse_args().factAumento==0):
     warnings.warn("Se especificó la técnica de aumento de ruido; sin embargo el factor de aumento es 0, por lo que no se realizará ningún aumento.")
-elif (parser.parse_args().tecAumento=="escalamiento")and(parser.parse_args().factAumento>1):
-    warnings.warn("El método de escalamiento solamente puede duplicar el tamaño del conjunto de datos; por lo tanto se obviará el valor de factAumento y se asumirá que es 1.")
 print("Algoritmo ejecutandose en",device)
 #crear carpeta en la que se guardarán los resultados
 carpeta="resultados"
@@ -245,18 +246,21 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
     #actualizar imágenes sintéticas
     perdida=torch.tensor(0.0).to(device)
     for clase in range(num_classes):
-        img_real=aumento(
-            get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device),
-            parser.parse_args().tecAumento,
-            parser.parse_args().factAumento
-        )
-        img_sin=aumento(
-            image_syn[clase*ipc:(clase+1)*ipc].reshape(tam),
-            parser.parse_args().tecAumento,
-            parser.parse_args().factAumento
-        )
+        #salida sin aumento
+        img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
+        img_sin=image_syn[clase*ipc:(clase+1)*ipc].reshape(tam)
+        #aplicar aumento
+        if parser.parse_args().tecAumento=="ruido":
+            img_real=adicion(img_real,parser.parse_args().factAumento)
+            img_sin=adicion(img_sin,parser.parse_args().factAumento)
+        elif parser.parse_args().tecAumento=="escalamiento"or parser.parse_args().tecAumento=="potencia":
+            paramAumento=torch.clip(torch.rand(parser.parse_args().factAumento),0.01,0.99)
+            img_real=noAdicion(img_real,paramAumento,parser.parse_args().tecAumento)
+            img_sin=noAdicion(img_sin,paramAumento,parser.parse_args().tecAumento)
+        #aplicar embebido
         salida_real=embebido(net,img_real).detach()
         output_sin=embebido(net,img_sin)
+        #funcion de perdida
         perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)
     optimizer_img.zero_grad()
     perdida.backward()
@@ -274,101 +278,9 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
         torch.save(historial_imagenes_sinteticas,ruta+"imgs.pt")
     else:
         torch.save(image_syn,ruta+"imgs.pt")
-    
     for variable,archivo in zip(
         [torch.get_rng_state(),hist_perdida,hist_acc_val,hist_acc_train],
         ["tensorSemilla","histPerdida","accEnt","accval"]
     ):
         torch.save(variable,ruta+archivo+".pt")
     print("Iteración",iteracion,"perdida",perdida_media)
-########################################################################################
-"""
-for it in range(ultima_iteracion,parser.parse_args().iteraciones+1):
-    ''' Train synthetic data '''
-    print("Iteración",it)
-    net.train()
-    net_parameters = list(net.parameters())
-    optimizer_net.zero_grad()
-    loss_avg = 0
-    acc_train_acum=0
-    acc_test_acum=0
-    for ol in range(ol_inic,outer_loop):
-        print(f'outer_loop ={ol}/{outer_loop}, iteration = {it}/{parser.parse_args().iteraciones}')
-        ''' update synthetic data '''
-        loss = torch.tensor(0.0).to(device)
-        for c in range(num_classes):
-            img_real = get_images(c, hiperparametros["batch_size"],indices_class,images_all).to(device)
-            #img_real = get_images(c, batch_real,indices_class,images_all).to(device)
-            lab_real = torch.ones((img_real.shape[0],), device=device, dtype=torch.long) * c
-            net=net.to(device)
-            output_real = net(img_real)
-            loss_real = criterion(output_real, lab_real)
-            gw_real = torch.autograd.grad(loss_real, net_parameters)
-            gw_real = list((_.detach().clone() for _ in gw_real))
-            img_syn = image_syn[c*ipc:(c+1)*ipc].reshape(tam)
-            lab_syn = torch.ones((ipc,), device=device, dtype=torch.long) * c
-            output_syn = net(img_syn)
-            loss_syn = criterion(output_syn, lab_syn)
-            gw_syn = torch.autograd.grad(loss_syn, net_parameters, create_graph=True)
-
-            loss += match_loss(gw_syn, gw_real,device)
-
-        optimizer_img.zero_grad()
-        loss.backward()
-        optimizer_img.step()
-        loss_avg += loss.item()
-        if ol == outer_loop - 1:
-            ol_inic=0
-            break
-
-
-        ''' update network '''
-        image_syn_train, label_syn_train = copy.deepcopy(image_syn.detach()), copy.deepcopy(label_syn.detach())  # avoid any unaware modification
-        dst_syn_train =TensorDataset(image_syn_train,label_syn_train)
-        trainloader = torch.utils.data.DataLoader(dst_syn_train, batch_size=hiperparametros["batch_size"], shuffle=False, num_workers=0)
-        #trainloader = torch.utils.data.DataLoader(dst_syn_train, batch_size=batch_train, shuffle=False, num_workers=0)
-        acc_train,acc_test=train(net,
-                optimizer_net,
-                criterion,
-                trainloader,
-                inner_loop,
-                test_loader=test_loader,
-                device=device,
-                )
-        print("     Accuracy de entrenamiento:",acc_train)
-        print("     Accuracy de validación:",acc_test)
-        acc_train_acum=acc_train_acum+acc_train
-        acc_test_acum=acc_test_acum+acc_test
-        #guardar optimizador
-        torch.save(optimizer_img,ruta+"optimizer_img")
-        torch.save(optimizer_net,ruta+"optimizer_net")
-        #guardar firmas sinteticas o historial de firmas sinteticas si corresponde
-        if parser.parse_args().historial:
-          historial_imagenes_sinteticas.append(copy.deepcopy(image_syn_train))
-          #se guarda el historial en un archivo de nombre img
-          torch.save(historial_imagenes_sinteticas,ruta+"imgs")
-        else:
-          #guardar unicamente las firmas en la iteración actual
-          torch.save(image_syn_train,ruta+"imgs")
-        torch.save(net,ruta+"net")
-        torch.save(ol,ruta+"ol")
-    net.eval()
-    perdida_destilado.append(loss_avg/outer_loop)
-    #guardar el loss en un archivo llamado perdida
-    torch.save(perdida_destilado,ruta+"perdida")
-    #guardar accuracies
-    hist_acc_train.append(acc_train_acum/outer_loop)
-    hist_acc_test.append(acc_test_acum/outer_loop)
-    torch.save(hist_acc_train,ruta+"accuracyEntrenamiento")
-    torch.save(hist_acc_test,ruta+"accuracyTesteo")
-    print("iteracion:",it,
-          "perdida promedio:",perdida_destilado[-1],
-          "accuracy promedio de entrenamiento:",hist_acc_train[-1],
-          "accuracy promedio de validación:",hist_acc_test[-1])
-
-    ultima_iteracion=ultima_iteracion+1
-    net,optimizer_net,temp1,temp2=get_model(hiperparametros["model"],device, **hiperparametros)
-    del temp1,temp2
-    torch.save(net,ruta+"net")
-    torch.save(optimizer_net,ruta+"optimizer_net")
-"""
