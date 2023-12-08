@@ -164,9 +164,8 @@ if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuev
     #etiquetas sintéticas de la forma [0,0,1,1,...,num_classes-1] cada etiqueta repitiendose ipc veces.
     label_syn=torch.repeat_interleave(torch.arange(num_classes,requires_grad=False),ipc)
     #Inicialización de imagenes sintéticas
-    tam=(num_classes*ipc,channel)
-    if hiperparametros["patch_size"]>1:
-        tam=tam+(hiperparametros["patch_size"],hiperparametros["patch_size"])
+    tam=list(images_all.shape)
+    tam[0]=num_classes*ipc
     if parser.parse_args().inicializacion=="muestreo":
         image_syn=torch.empty(tam,device=device)
         import secrets
@@ -229,15 +228,6 @@ else:#se va a reanudar un entrenatiento previo
     ipc=int(len(label_syn)/hiperparametros["n_classes"])
     channel=image_syn.shape[1]
 print("Los resultados se guardarán en ",ruta)
-tam=(ipc, channel)
-if hiperparametros["model"]=="hamida":
-    tam=(ipc,
-         1,
-         channel,
-         hiperparametros["patch_size"],
-         hiperparametros["patch_size"])
-elif hiperparametros["patch_size"]>1:
-    tam=tam+(hiperparametros["patch_size"],hiperparametros["patch_size"])
 for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
     net.train()
     for parametros in list(net.parameters()):
@@ -248,7 +238,7 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
     for clase in range(num_classes):
         #salida sin aumento
         img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
-        img_sin=image_syn[clase*ipc:(clase+1)*ipc].reshape(tam)
+        img_sin=image_syn[clase*ipc:(clase+1)*ipc]
         #aplicar aumento
         if parser.parse_args().tecAumento=="ruido":
             img_real=adicion(img_real,parser.parse_args().factAumento)
