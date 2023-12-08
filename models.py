@@ -379,8 +379,6 @@ class HamidaEtAl(nn.Module):
 
     def forward(self, x):
         x=x.to(self.dispositivo)
-        if len(x.shape)<5:
-            x=torch.unsqueeze(x,1)
         x = F.relu(self.conv1(x))
         x = self.pool1(x)
         x = F.relu(self.conv2(x))
@@ -530,8 +528,6 @@ class ChenEtAl(nn.Module):
 
     def forward(self, x):
         x=x.to(self.dispositivo)
-        if len(x.shape)<5:
-            x=torch.unsqueeze(x,1)
         x = F.relu(self.conv1(x))
         x = self.pool1(x)
         x = self.dropout(x)
