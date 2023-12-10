@@ -11,6 +11,7 @@ from datasets import HyperX
 from torch.utils.data import DataLoader
 from utils import embebido
 import warnings
+from tqdm import tqdm
 #configurar argumentos
 parser=argparse.ArgumentParser(description="Destilar imagenes hiperespectrales")
 parser.add_argument("--modelo",
@@ -228,14 +229,14 @@ else:#se va a reanudar un entrenatiento previo
     ipc=int(len(label_syn)/hiperparametros["n_classes"])
     channel=image_syn.shape[1]
 print("Los resultados se guardarán en ",ruta)
-for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
+for iteracion in tqdm(range(len(hist_perdida),parser.parse_args().iteraciones+1)):
     net.train()
     for parametros in list(net.parameters()):
         parametros.requires_grad = False
     perdida_media=0
     #actualizar imágenes sintéticas
     perdida=torch.tensor(0.0).to(device)
-    for clase in range(num_classes):
+    for clase in tqdm(range(num_classes)):
         #salida sin aumento
         img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
         img_sin=image_syn[clase*ipc:(clase+1)*ipc]
@@ -273,4 +274,5 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
         ["tensorSemilla","histPerdida","accEnt","accval"]
     ):
         torch.save(variable,ruta+archivo+".pt")
+    tqdm.write(f"Iteración: {iteracion}/{parser.parse_args().iteraciones}, perdida: {perdida_media}")
     print("Iteración",iteracion,"perdida",perdida_media)
