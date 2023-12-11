@@ -3,7 +3,6 @@ import torch
 from entrenamiento import train
 from torch.utils.data import TensorDataset,DataLoader
 from models import get_model
-from datos import aumento
 parser=argparse.ArgumentParser(description="realizar entrenamientos para comprobar el funcionamiento del destilado.")
 parser.add_argument(
     "--carpetaAnterior",
@@ -45,7 +44,6 @@ parser.add_argument(
     "--tecAumento",
     type=str,
     choices=["ruido"],
-    default="ruido",
     help="Técnica que se utilizará para hacer aumento de datos. Ruido consiste en sumar ruido pseudoaleatorio uniformemente distribuido en el intervalo [-0.05,0.05]"
 )
 parser.add_argument(
@@ -93,9 +91,6 @@ with open(f"EstadisticosDatos{parser.parse_args().tipoDatos}.txt", "w") as archi
 #carga del modelo y optimizadores
 hiperparametros["n_classes"]=hiperparametros["n_classes"]+1
 red,optimizador,criteiron,_=get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
-#iniciar entrenamiento y guardar registros
-if parser.parse_args().tipoDatos=="destilados"and parser.parse_args().tecAumento!=None:
-    img,etiquetas=aumento(img,parser.parse_args().tecAumento,parser.parse_args().paramAumento[0],etiquetas)
 print("Iniciando entrenamiento con datos",parser.parse_args().tipoDatos)
 for variable,archivo in zip(
     train(red,

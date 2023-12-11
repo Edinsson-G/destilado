@@ -10,7 +10,7 @@ do
         do
             for factorAumento in {1,2,3,4}
             do
-                python3 ejecutarDestilado.py --modelo $1 --conjunto $2 --dispositivo $3 --ipc $ipc --lrImg $lr --tecAumento $tecnica --factAumento $factorAumento
+                python3 ejecutarDestilado.py --modelo $1 --conjunto $2 --dispositivo $3 --ipc $ipc --lrImg $lr --tecAumento $tecnica --factAumento $factorAumento --reanudar True
             done
         done
     done
