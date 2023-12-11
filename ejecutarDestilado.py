@@ -73,6 +73,12 @@ parser.add_argument(
     type=str,
     help="Nombre de la subcarpeta en la que se almacenarán los resultados del algoritmo, debe estar en el directorio /resultados, si no existe entoces se creará."
 )
+parser.add_argument(
+    "--reanudar",
+    type=bool,
+    default=False,
+    help="En caso que no se haya especificado una carpeta anterior verificar si la carpeta destino existe para reanudar el destilado que contiene."
+)
 device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
 torch.set_default_device(device)
 if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
@@ -88,7 +94,18 @@ if carpeta not in os.listdir('.'):
     os.mkdir(carpeta)
 #lista con el nombre de algunas varibales a guardar o cargar segun sea el caso
 para_guardar=["test_loader","val_loader","hiperparametros","optimizer_img","images_all","labels_all","label_syn","indices_class"]
-if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuevo
+carpetaAnterior=parser.parse_args().carpetaAnterior
+if parser.parse_args().reanudar and (parser.parse_args().carpetaAnterior==None):
+    destino=parser.parse_args().carpetaDestino
+    if destino==None:
+        destino=f"Modelo {parser.parse_args().modelo} conjunto {parser.parse_args().conjunto} ipc {parser.parse_args().ipc} ritmo de aprendizaje {parser.parse_args().lrImg} aumento {parser.parse_args().tecAumento}"
+    #verificar que exista la carpeta
+    if destino in os.listdir("resultados"):
+        #verificar si existe el archivo histPerdida.pt
+        if "histPerdida.pt"in os.listdir("resultados/"+destino):
+            carpetaAnterior=destino
+if carpetaAnterior==None:#si se va iniciar un destilado nuevo
+    print("Iniciando nuevo entrenmiento")
     if parser.parse_args().carpetaDestino!=None:
         ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
     else:
@@ -206,14 +223,15 @@ if parser.parse_args().carpetaAnterior==None:#si se va iniciar un destilado nuev
     else:
         torch.save(image_syn,ruta+"imgs.pt")
 else:#se va a reanudar un entrenatiento previo
+    print("Reanudando entrenamiento")
     if parser.parse_args().carpetaDestino!=None:
         ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
     else:
         #por defecto sobreeescribir en la carpeta anterior
-        ruta=carpeta+'/'+parser.parse_args().carpetaAnterior+'/'
+        ruta=carpeta+'/'+carpetaAnterior+'/'
     #obtener modelos, optimizadores y datos
     del para_guardar[0]#no es necesario cargar test_loader
-    ruta_anterior=carpeta+'/'+parser.parse_args().carpetaAnterior+'/'
+    ruta_anterior=carpeta+'/'+carpetaAnterior+'/'
     #restablecer el estado del generador de números pseudoaleatorios
     torch.set_rng_state(torch.load(ruta_anterior+"tensorSemilla.pt"))
     #carguar las variables de la lista para_guardar
@@ -275,4 +293,4 @@ for iteracion in tqdm(range(len(hist_perdida),parser.parse_args().iteraciones+1)
     ):
         torch.save(variable,ruta+archivo+".pt")
     tqdm.write(f"Iteración: {iteracion}/{parser.parse_args().iteraciones}, perdida: {perdida_media}")
-    print("Iteración",iteracion,"perdida",perdida_media)
+    #print("Iteración",iteracion,"perdida",perdida_media)

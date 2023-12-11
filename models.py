@@ -1245,4 +1245,3 @@ def val(net, data_loader, device="cpu", supervision="full"):
                     accuracy += out.item() == pred.item()
                     total += 1
     return accuracy / total
-print()

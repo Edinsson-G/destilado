@@ -1,6 +1,7 @@
 #$1: red
 #$2: conjunto de datos
 #$3: dispositivo
+source entorno/bin/activate
 for ipc in {10,20,30,40,50}
 do
     for lr in {1,0.1,0.01,0.001,0.0001}
