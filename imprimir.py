@@ -1,20 +1,16 @@
 import torch
 import os
-for modelo in ["nn","hamida"]:
-    for ipc in range(10,60,10):
-        for conjunto in ["IndianPines","PaviaC","PaviaU","Botswana"]:
-            carpeta="resultados"
-            subcarpeta="Modelo "+modelo+" conjunto "+conjunto+" ipc "+str(ipc)
-            if modelo=="hamida":
-                subcarpeta=subcarpeta+" lr 0.001"
-            if "prueba "+subcarpeta+" 1000 epocas" in os.listdir(carpeta):
-            #if "prueba "+subcarpeta+" 1000 epocas" in os.listdir(carpeta)and len(torch.load(carpeta+'/'+subcarpeta+"/perdida"))>=500:
-                print("\n\n cantidad de iteraciones:",len(torch.load(carpeta+'/'+subcarpeta+"/perdida")))
-                subcarpeta=subcarpeta+" 1000 epocas"
-                print(subcarpeta)
-                print("datos destilados:")
-                print("accuracy de entrenamiento",torch.load(carpeta+"/prueba "+subcarpeta+"/acc_train"))
-                print("accuracy de testeo",torch.load(carpeta+"/prueba "+subcarpeta+"/acc_test"))
-                print("firmas reales muestreadas")
-                print("accuracy de entrenamiento",torch.load(carpeta+"/prueba "+subcarpeta+"/acc_ent_primer"))
-                print("accuracy de testeo",torch.load(carpeta+"/prueba "+subcarpeta+"/acc_test_primer"))
+import pandas as pd
+def impresion_segura(ruta,archivo,indice=None):
+    valor=torch.load(ruta+'/'+archivo)if archivo in os.listdir(ruta) else f"{ruta}/{archivo} no existe"
+    if indice!=None and (type(valor)==dict or type(valor)==list):
+        valor=valor[indice]
+    return valor
+resultados="resultados"
+for carpeta in os.listdir(resultados):
+    ruta=resultados+'/'+carpeta
+    print("carpeta:",carpeta)
+    print("número de clases:",impresion_segura(ruta,"hiperparametros.pt"),"n_classes")
+    print("accuracy de entrenamiento:",impresion_segura(ruta,"accTrainDatosdestilados.pt"),-1)
+    print("accuracy de validación:",impresion_segura(ruta,"accValDatosdestilados.pt"),-1)
+    print("accuracy de testeo:",impresion_segura(ruta,"accTestDatosdestilados.pt"))
