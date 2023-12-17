@@ -194,6 +194,7 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
         image_syn=torch.rand(tam,requires_grad=True,device=device)
     del tam
     optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg, momentum=0.5) # optimizer_img for synthetic data
+    planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,verbose=True)
     hist_perdida=[]
     summary(net)
     hist_acc_train=[]
@@ -276,12 +277,14 @@ for iteracion in tqdm(range(len(hist_perdida),parser.parse_args().iteraciones+1)
     optimizer_img.step()
     perdida_media+=perdida.item()
     perdida_media/=(num_classes)
+    planificador.step(perdida_media)
     #reinicializar los pesos de la red
     net,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],
                                                              hiperparametros["device"],
                                                              **hiperparametros)
     #guardar registros necesarios
     hist_perdida.append(perdida_media)
+    #disminuir la tasa de aprendizaje si después de 5 iteraciones la función de pérdida no ha disminuido
     if parser.parse_args().historial:
         historial_imagenes_sinteticas.append(copy.deepcopy(image_syn))
         torch.save(historial_imagenes_sinteticas,ruta+"imgs.pt")
@@ -293,4 +296,3 @@ for iteracion in tqdm(range(len(hist_perdida),parser.parse_args().iteraciones+1)
     ):
         torch.save(variable,ruta+archivo+".pt")
     tqdm.write(f"Iteración: {iteracion}/{parser.parse_args().iteraciones}, perdida: {perdida_media}")
-    #print("Iteración",iteracion,"perdida",perdida_media)
