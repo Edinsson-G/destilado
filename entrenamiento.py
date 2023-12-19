@@ -26,8 +26,8 @@ def train(
     criterion,
     data_loader,
     epoch,
-    test_loader,
-    val_loader,
+    test_loader=None,
+    val_loader=None,
     device=torch.device("cpu")
 ):
     net.to(device)
@@ -74,38 +74,42 @@ def train(
             accuracy.reset()
         acc_ent_hist.append(torch.mean(torch.tensor(acc_ent_iter)))
         perdida.append(torch.mean(torch.tensor(loss_iter)))
+        if val_loader!=None:
+            data_loop_test = tqdm(enumerate(val_loader), total=len(val_loader), colour='green')
+            #data_loop_test = enumerate(test_loader)
 
-        data_loop_test = tqdm(enumerate(val_loader), total=len(val_loader), colour='green')
-        #data_loop_test = enumerate(test_loader)
+            net.eval()
+            # Run the testing loop for one epoch
+            for batch_idx, (data, target) in data_loop_test:
 
-        net.eval()
-        # Run the testing loop for one epoch
-        for batch_idx, (data, target) in data_loop_test:
+                # Load the data into the GPU if required
+                #data, target = data.to(device), target.to(device)-1
+                data, target = data.to(device), target.to(device)
+                output = net(data)
+                loss = criterion(output, target.type(torch.long).to(device))
+                test_loss.update(loss.item(), data.size(0))
+                accuracy.update((output,target))
+                correct = accuracy.compute()
 
-            # Load the data into the GPU if required
-            #data, target = data.to(device), target.to(device)-1
-            data, target = data.to(device), target.to(device)
-            output = net(data)
-            loss = criterion(output, target.type(torch.long).to(device))
-            test_loss.update(loss.item(), data.size(0))
-            accuracy.update((output,target))
-            correct = accuracy.compute()
+                test_acc.update(correct, data.size(0))
+                acc_val_hist.append(float(correct))
+                #test_acc1=float(correct)
+                dict_metrics = dict(loss_test=test_loss.avg,acc_test=test_acc.avg)
 
-            test_acc.update(correct, data.size(0))
-            acc_val_hist.append(float(correct))
-            #test_acc1=float(correct)
-            dict_metrics = dict(loss_test=test_loss.avg,acc_test=test_acc.avg)
+                data_loop_test.set_description(f'Network Testing [{e} / {epoch}]')
+                data_loop_test.set_postfix(**dict_metrics)
 
-            data_loop_test.set_description(f'Network Testing [{e} / {epoch}]')
-            data_loop_test.set_postfix(**dict_metrics)
-
+                accuracy.reset()
+    if test_loader!=None:
+        #calcular accuracy de testeo
+        for img,etq in test_loader:
+            img=img.to(device)
+            etq=etq.to(device)
+            accuracy.update((net(img),etq))
+            acc_test=float(accuracy.compute())
             accuracy.reset()
-    #calcular accuracy de testeo
-    for img,etq in test_loader:
-        img=img.to(device)
-        etq=etq.to(device)
-        accuracy.update((net(img),etq))
-        acc_test=float(accuracy.compute())
-        accuracy.reset()
-    print("accuracy de testeo:",acc_test)
-    return net,perdida,acc_ent_hist,acc_val_hist,acc_test
+        print("accuracy de testeo:",acc_test)
+    if test_loader!=None and val_loader!=None:
+        return net,perdida,acc_ent_hist,acc_val_hist,acc_test
+    else:
+        return net

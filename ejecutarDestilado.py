@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from utils import embebido
 import warnings
 from tqdm import tqdm
+from entrenamiento import train
 #configurar argumentos
 parser=argparse.ArgumentParser(description="Destilar imagenes hiperespectrales")
 parser.add_argument("--modelo",
@@ -271,7 +272,9 @@ for iteracion in tqdm(range(len(hist_perdida),parser.parse_args().iteraciones+1)
         salida_real=embebido(net,img_real).detach()
         output_sin=embebido(net,img_sin)
         #funcion de perdida
-        perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)
+        rn=torch.prod(torch.tensor(salida_real.shape)[1:]).item()**0.5#raiz de n
+
+        perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)+torch.sum((torch.std(salida_real,dim=0)/rn-torch.std(output_sin,dim=0)/rn)**2)
     optimizer_img.zero_grad()
     perdida.backward()
     optimizer_img.step()

@@ -43,14 +43,15 @@ parser.add_argument("--epocas",type=int,default=100,help="Cantidad de epocas.")
 parser.add_argument(
     "--tecAumento",
     type=str,
-    choices=["ruido"],
+    choices=["ruido","escalamiento","ninguno"],
+    default="ruido",
     help="Técnica que se utilizará para hacer aumento de datos. Ruido consiste en sumar ruido pseudoaleatorio uniformemente distribuido en el intervalo [-0.05,0.05]"
 )
 parser.add_argument(
-    "--paramAumento",
-    type=list,
-    default=[3],
-    help="Parametros de aumento. En el caso de la tecnica de aumento ruido debe ser una lista de un único elemento entero que indica cuantas veces se deberá generar un lote de datos nuevo."
+    "--factAumento",
+    type=int,
+    default=2,
+    help="Cantidad de datos nuevos a generar a partir de cada dato de entrenamiento"
 )
 carpeta="resultados/"
 ruta_anterior=carpeta+parser.parse_args().carpetaAnterior+'/'
@@ -82,6 +83,13 @@ else:
     img=torch.load(ruta_anterior+"images_all.pt",map_location=hiperparametros["device"])
     etiquetas=torch.load(ruta_anterior+"labels_all.pt",map_location=hiperparametros["device"])
 img.requires_grad_(False)
+#ejecutar aumento si aplica
+if parser.parse_args().tecAumento=="ruido":
+    from datos import adicion
+    img,etiquetas=adicion(img,parser.parse_args().factAumento,etiquetas)
+elif parser.parse_args().tecAumento=="escalamiento":
+    from datos import noAdicion
+    img,etiquetas=noAdicion(img,torch.rand(parser.parse_args().factAumento),"escalamiento",etiquetas)
 maxi=torch.max(img)
 if maxi>1:
     img=img/maxi
