@@ -11,3 +11,6 @@ entorno/
 pint.txt
 entornoDestilado/
 imprimir.py
+probar.sh
+*.csv
+scriptsDePrueba/
