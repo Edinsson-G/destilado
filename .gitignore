@@ -13,4 +13,4 @@ entornoDestilado/
 imprimir.py
 probar.sh
 *.csv
-scriptsDePrueba/
+prueba*
