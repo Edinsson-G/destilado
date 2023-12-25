@@ -258,7 +258,8 @@ for iteracion in tqdm(range(len(hist_perdida),parser.parse_args().iteraciones+1)
     perdida=torch.tensor(0.0).to(device)
     for clase in tqdm(range(num_classes)):
         #salida sin aumento
-        img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
+        #img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
+        img_real=get_images(clase,ipc,indices_class,images_all).to(device)
         img_sin=image_syn[clase*ipc:(clase+1)*ipc]
         #aplicar aumento
         if parser.parse_args().tecAumento=="ruido":
@@ -273,7 +274,6 @@ for iteracion in tqdm(range(len(hist_perdida),parser.parse_args().iteraciones+1)
         output_sin=embebido(net,img_sin)
         #funcion de perdida
         rn=torch.prod(torch.tensor(salida_real.shape)[1:]).item()**0.5#raiz de n
-
         perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)+torch.sum((torch.std(salida_real,dim=0)/rn-torch.std(output_sin,dim=0)/rn)**2)
     optimizer_img.zero_grad()
     perdida.backward()

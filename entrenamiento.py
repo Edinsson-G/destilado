@@ -113,6 +113,7 @@ def train(
         return net,perdida,acc_ent_hist,acc_val_hist,acc_test
     else:
         return net
+"""
 def retroporopagacion(data,target,optimizer,net,device,criterion):
     data, target = data.to(device), target.to(device)
     optimizer.zero_grad()
@@ -129,3 +130,4 @@ def train(net,optimizer,criterion,data_loader,device,epoch=100,test_loader=None,
             train_loss = AverageMeter()
             for data, target in tqdm(data_loader, total=len(data_loader), colour='red'):
                 retroporopagacion(data,target,optimizer,net,device,criterion)
+"""
