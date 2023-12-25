@@ -8,7 +8,7 @@ from datos import *
 import argparse
 import numpy as np
 from datasets import HyperX
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader,TensorDataset
 from utils import embebido
 import warnings
 from tqdm import tqdm
@@ -93,24 +93,36 @@ print("Algoritmo ejecutandose en",device)
 carpeta="resultados"
 if carpeta not in os.listdir('.'):
     os.mkdir(carpeta)
-#lista con el nombre de algunas varibales a guardar o cargar segun sea el caso
-para_guardar=["test_loader","val_loader","hiperparametros","optimizer_img","images_all","labels_all","label_syn","indices_class"]
+#lista de variables que se deberán guardar o carguar segun sea el caso
+#variables que solo se deben carguar o guardar una sola vez durante la ejecucion
+global_var=["test_loader","val_loader","images_all","labels_all","label_syn","indices_class","hiperparametros","train_loader"]
+#variables que se guardarán cada ol
+ol_var=[
+    "ult_ol",#ultimo ol completado de la epoca actual
+    "perd_acum",#perdida acumulada en el ol
+    "image_syn"
+]
+#variables que se guardarán al finalizar cada epoca
+ep_var=["hist_perdida","hist_acc"]
+#definir carpetas anteriores y destino
+destino=f"Modelo+{parser.parse_args().modelo}+conjunto+{parser.parse_args().conjunto}+ipc+{parser.parse_args().ipc}+ritmo+de+aprendizaje+{parser.parse_args().lrImg}+aumento+{parser.parse_args().tecAumento}"if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
 carpetaAnterior=parser.parse_args().carpetaAnterior
-if parser.parse_args().reanudar and (parser.parse_args().carpetaAnterior==None):
-    destino=parser.parse_args().carpetaDestino
-    if destino==None:
-        destino=f"Modelo {parser.parse_args().modelo} conjunto {parser.parse_args().conjunto} ipc {parser.parse_args().ipc} ritmo de aprendizaje {parser.parse_args().lrImg} aumento {parser.parse_args().tecAumento}"
-    #verificar que exista la carpeta
-    if destino in os.listdir("resultados"):
-        #verificar si existe el archivo histPerdida.pt
-        if "histPerdida.pt"in os.listdir("resultados/"+destino):
-            carpetaAnterior=destino
+if carpetaAnterior==None and parser.parse_args().reanudar and destino in os.listdir(carpeta):
+    carpetaAnterior=destino
+if destino not in os.listdir(carpeta):
+    os.mkdir(carpeta+'/'+destino)
+if carpetaAnterior!=None:
+    #verificar la existencia de todos los archivos necesarios para reanudar el destilado (para ello se debió haber realizado por lo menos un ol)
+    reanudar=True
+    for nombre_archivo in ol_var+global_var:
+        if nombre_archivo+".pt" not in os.listdir(carpeta+'/'+destino):
+            reanudar=False
+            warnings.warn(f"No se encontó el archivo {carpeta}/{destino}/{nombre_archivo}.pt, se iniciará el entrenamiento desde 0.")
+    if not reanudar:
+        carpetaAnterior=None
+ruta=carpeta+'/'+destino+'/'
 if carpetaAnterior==None:#si se va iniciar un destilado nuevo
-    print("Iniciando nuevo entrenmiento")
-    if parser.parse_args().carpetaDestino!=None:
-        ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
-    else:
-        ruta=f"{carpeta}/Modelo {parser.parse_args().modelo} conjunto {parser.parse_args().conjunto} ipc {parser.parse_args().ipc} ritmo de aprendizaje {parser.parse_args().lrImg} aumento {parser.parse_args().tecAumento}/"
+    print("Iniciando nuevo destilado en",ruta)
     #obtener modelos, optimizadores y datos
     torch.manual_seed(parser.parse_args().semilla)
     #carguar imagenes
@@ -142,19 +154,17 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
     net,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],
                                                              hiperparametros["device"],
                                                              **hiperparametros)
+    summary(net)
     train_gt,test_gt=sample_gt(gt,
                                hiperparametros["training_sample"],
                                mode=hiperparametros["sampling_mode"])
     train_gt, val_gt = sample_gt(train_gt, 0.8, mode="random")
     dst_train = HyperX(img, train_gt, **hiperparametros)
+    train_loader=DataLoader(dst_train,batch_size=hiperparametros["batch_size"],shuffle=True)
     dst_test=HyperX(img,test_gt,**hiperparametros)
-    test_loader=DataLoader(dst_test,
-                           batch_size=len(dst_test),
-                           shuffle=True)
+    test_loader=DataLoader(dst_test,batch_size=len(dst_test),shuffle=True)
     dst_val=HyperX(img, val_gt, **hiperparametros)
-    val_loader= DataLoader(dst_val,
-                           batch_size=len(dst_val),
-                           shuffle=True)
+    val_loader= DataLoader(dst_val,batch_size=len(dst_val),shuffle=True)
     del test_gt,val_gt,train_gt,dst_val,dst_test
     channel=img.shape[-1]
     clases=np.unique(gt)
@@ -164,15 +174,12 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
             num_classes=num_classes-1
     del img,gt,clases
     hiperparametros["n_classes"]=num_classes
-    ultima_iteracion=0
-    ol_inic=0
     #preprocesar datos reales
     images_all = []
     labels_all = []
     indices_class = [[] for c in range(num_classes)]
     images_all = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))] # Save the images (1,1,28,28)
     labels_all = [int(dst_train[i][1]) for i in range(len(dst_train))] # Save the labels
-    del dst_train
     for i, lab in enumerate(labels_all): # Save the index of each class labels
         indices_class[lab].append(i)
     images_all = torch.cat(images_all, dim=0).to(device) # Cat images along the batch dimension
@@ -194,50 +201,42 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
     else:
         image_syn=torch.rand(tam,requires_grad=True,device=device)
     del tam
-    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg, momentum=0.5) # optimizer_img for synthetic data
-    planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,verbose=True)
+    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg, momentum=0.5)
+    #variables necesarias para reanudar destilado
+    if parser.parse_args().historial:
+        historial_imagenes_sinteticas=[]
     hist_perdida=[]
-    summary(net)
-    hist_acc_train=[]
-    hist_acc_val=[]
-    #crear la carpeta si no existe
-    if not os.path.isdir(rf"{ruta}"):
-        os.mkdir(ruta)
-    #guardar archivos necesarios para reanudar el entrenamiento
+    hist_acc=[]
+    ult_ol=0
+    #guardar variables globales
     for variable,archivo in zip(
         [
             test_loader,
             val_loader,
-            hiperparametros,
-            optimizer_img,
             images_all,
             labels_all,
             label_syn,
-            indices_class
+            indices_class,
+            hiperparametros,
+            train_loader
         ],
-        para_guardar
+        global_var
     ):
         torch.save(variable,ruta+archivo+".pt")
+    #durante el destilado no se utilizará esta variable
     del test_loader
-    if parser.parse_args().historial:
-        historial_imagenes_sinteticas=[copy.deepcopy(image_syn)]
-        torch.save(historial_imagenes_sinteticas,ruta+"imgs.pt")
-    else:
-        torch.save(image_syn,ruta+"imgs.pt")
 else:#se va a reanudar un entrenatiento previo
-    print("Reanudando entrenamiento")
-    if parser.parse_args().carpetaDestino!=None:
-        ruta=carpeta+'/'+parser.parse_args().carpetaDestino+'/'
-    else:
-        #por defecto sobreeescribir en la carpeta anterior
-        ruta=carpeta+'/'+carpetaAnterior+'/'
+    print("Reanudando entrenamiento en",ruta)
     #obtener modelos, optimizadores y datos
-    del para_guardar[0]#no es necesario cargar test_loader
+    del global_var[0]#no es necesario cargar test_loader
     ruta_anterior=carpeta+'/'+carpetaAnterior+'/'
     #restablecer el estado del generador de números pseudoaleatorios
     torch.set_rng_state(torch.load(ruta_anterior+"tensorSemilla.pt"))
-    #carguar las variables de la lista para_guardar
-    (val_loader,hiperparametros,optimizer_img,images_all,labels_all,label_syn,indices_class,hist_perdida,hist_acc_val,hist_acc_train,image_syn)=tuple(torch.load(ruta+archivo+".pt")for archivo in para_guardar+["histPerdida","accEnt","accval","imgs"])
+    #carguar las variables de global_var y ol_var
+    (val_loader,images_all,labels_all,label_syn,indices_class,hiperparametros,train_loader,ult_ol,perd_acum,image_syn)=tuple(torch.load(ruta+archivo+".pt")for archivo in global_var+ol_var)
+    #carguar las variables de ep_var
+    hist_perdida=torch.load(ruta+"hist_perdida.pt")if os.path.exists(ruta+"hist_perdida.pt")else []
+    hist_acc=torch.load(ruta+"hist_acc.pt")if os.path.exists(ruta+"hist_acc.pt")else []
     if type(image_syn)==list:
         #en el entrenamiento anterior el argumento --model fue True, image_syn es realemente el último elemento de ese historial
         historial_imagenes_sinteticas=copy.deepcopy(image_syn)
@@ -249,53 +248,77 @@ else:#se va a reanudar un entrenatiento previo
     ipc=int(len(label_syn)/hiperparametros["n_classes"])
     channel=image_syn.shape[1]
 print("Los resultados se guardarán en ",ruta)
-for iteracion in tqdm(range(len(hist_perdida),parser.parse_args().iteraciones+1)):
-    net.train()
-    for parametros in list(net.parameters()):
-        parametros.requires_grad = False
-    perdida_media=0
+#optimizer_img for synthetic data
+planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"max",patience=100,verbose=True)
+for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
+    print("iteración",iteracion)
+    perd_acum=0
     #actualizar imágenes sintéticas
-    perdida=torch.tensor(0.0).to(device)
-    for clase in tqdm(range(num_classes)):
-        #salida sin aumento
-        img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
-        img_sin=image_syn[clase*ipc:(clase+1)*ipc]
-        #aplicar aumento
-        if parser.parse_args().tecAumento=="ruido":
-            img_real=adicion(img_real,parser.parse_args().factAumento)
-            img_sin=adicion(img_sin,parser.parse_args().factAumento)
-        elif parser.parse_args().tecAumento=="escalamiento"or parser.parse_args().tecAumento=="potencia":
-            paramAumento=torch.clip(torch.rand(parser.parse_args().factAumento),0.01,0.99)
-            img_real=noAdicion(img_real,paramAumento,parser.parse_args().tecAumento)
-            img_sin=noAdicion(img_sin,paramAumento,parser.parse_args().tecAumento)
-        #aplicar embebido
-        salida_real=embebido(net,img_real).detach()
-        output_sin=embebido(net,img_sin)
-        #funcion de perdida
-        rn=torch.prod(torch.tensor(salida_real.shape)[1:]).item()**0.5#raiz de n
-
-        perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)+torch.sum((torch.std(salida_real,dim=0)/rn-torch.std(output_sin,dim=0)/rn)**2)
-    optimizer_img.zero_grad()
-    perdida.backward()
-    optimizer_img.step()
-    perdida_media+=perdida.item()
-    perdida_media/=(num_classes)
-    planificador.step(perdida_media)
-    #reinicializar los pesos de la red
-    net,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],
-                                                             hiperparametros["device"],
-                                                             **hiperparametros)
+    for ol in tqdm(range(ult_ol,10)):
+        net.train()
+        perdida=torch.tensor(0.0).to(device)
+        for parametros in list(net.parameters()):
+            parametros.requires_grad = False
+        for clase in tqdm(range(num_classes)):
+            #salida sin aumento
+            img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
+            img_sin=image_syn[clase*ipc:(clase+1)*ipc]
+            #aplicar aumento
+            if parser.parse_args().tecAumento=="ruido":
+                img_real=adicion(img_real,parser.parse_args().factAumento)
+                img_sin=adicion(img_sin,parser.parse_args().factAumento)
+            elif parser.parse_args().tecAumento=="escalamiento"or parser.parse_args().tecAumento=="potencia":
+                paramAumento=torch.clip(torch.rand(parser.parse_args().factAumento),0.01,0.99)
+                img_real=noAdicion(img_real,paramAumento,parser.parse_args().tecAumento)
+                img_sin=noAdicion(img_sin,paramAumento,parser.parse_args().tecAumento)
+            #aplicar embebido
+            salida_real=embebido(net,img_real).detach()
+            output_sin=embebido(net,img_sin)
+            #funcion de perdida
+            perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)+torch.sum((torch.std(salida_real,dim=0)-torch.std(output_sin,dim=0))**2)
+        optimizer_img.zero_grad()
+        perdida.backward()
+        optimizer_img.step()
+        #entrenar red
+        for parametros in list(net.parameters()):
+            parametros.requires_grad = True
+        net,accTest=train(
+            net,
+            optimizador_red,
+            criterion,
+            train_loader,
+            50,
+            device=device
+        )
+        #guardar generador de números pseuadoaleatorios
+        torch.save(torch.get_rng_state(),ruta+"tensorSemilla.pt")
+        #guardar registros de ol
+        perd_acum+=perdida.item()
+        ult_ol=ol
+        torch.save(ult_ol,ruta+"ult_ol.pt")
+        torch.save(perd_acum,ruta+"perd_acum.pt")
+        if parser.parse_args().historial:
+            historial_imagenes_sinteticas.append(copy.deepcopy(image_syn).to("cpu"))
+            torch.save(historial_imagenes_sinteticas,ruta+"image_syn.pt")
+        else:
+            torch.save(image_syn,ruta+"image_syn.pt")
+    #reinicar red
+    net,optimizador_red,criterion,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
+    _,acc=train(net,
+                optimizador_red,
+                criterion,
+                DataLoader(TensorDataset(image_syn.detach(),label_syn),batch_size=hiperparametros["batch_size"],shuffle=True,num_workers=0),
+                100,
+                val_loader,#se usarán los datos de validación cómo si fueran los de testeo en este caso
+                device=device
+                )
+    #reiniciar pesos de la red para la siguiente iteración
+    net,optimizador_red,criterion,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
+    #disminuir la tasa de aprendizaje si después de 100 iteraciones la función de pérdida no ha disminuido
+    planificador.step(acc)
     #guardar registros necesarios
-    hist_perdida.append(perdida_media)
-    #disminuir la tasa de aprendizaje si después de 5 iteraciones la función de pérdida no ha disminuido
-    if parser.parse_args().historial:
-        historial_imagenes_sinteticas.append(copy.deepcopy(image_syn))
-        torch.save(historial_imagenes_sinteticas,ruta+"imgs.pt")
-    else:
-        torch.save(image_syn,ruta+"imgs.pt")
-    for variable,archivo in zip(
-        [torch.get_rng_state(),hist_perdida,hist_acc_val,hist_acc_train],
-        ["tensorSemilla","histPerdida","accEnt","accval"]
-    ):
+    hist_acc.append(acc)
+    hist_perdida.append(perd_acum/10)
+    for variable,archivo in zip((hist_perdida,hist_acc),ep_var):
         torch.save(variable,ruta+archivo+".pt")
-    tqdm.write(f"Iteración: {iteracion}/{parser.parse_args().iteraciones}, perdida: {perdida_media}")
+    print("iteracion:",iteracion,"pérdida:",hist_perdida[-1],"accuracy:",acc)

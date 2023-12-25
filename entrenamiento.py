@@ -121,10 +121,12 @@ def retropropagacion(data,target,device,optimizer,net,criterion):
     return optimizer,net,loss,criterion,output
 def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loader=None,device=torch.device("cpu")):
     net.to(device)
+    net.train()
     ciclo=tqdm(data_loader,total=len(data_loader), colour="red")
     if val_loader==None:
         net.train()
         for e in tqdm(range(1,epoch+1)):
+            print
             perdida=AverageMeter()
             for data,target in ciclo:
                 optimizer,net,loss,criterion,_=retropropagacion(data,target,device,optimizer,net,criterion)
@@ -135,6 +137,7 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
     else:
         acc_ent_hist=[]
         acc_val_hist=[]
+        perdida=[]
         for e in tqdm(range(1,epoch+1)):
             train_loss = AverageMeter()
             train_acc = AverageMeter()
@@ -190,6 +193,7 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
         retornar=(net,perdida,acc_ent_hist,acc_val_hist)
     if test_loader!=None:
         #calcular accuracy de testeo
+        net.eval()
         for img,etq in test_loader:
             img=img.to(device)
             etq=etq.to(device)

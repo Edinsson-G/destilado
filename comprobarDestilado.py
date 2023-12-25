@@ -44,13 +44,13 @@ parser.add_argument(
     "--tecAumento",
     type=str,
     choices=["ruido","escalamiento","ninguno"],
-    default="ruido",
+    default="ninguno",
     help="Técnica que se utilizará para hacer aumento de datos. Ruido consiste en sumar ruido pseudoaleatorio uniformemente distribuido en el intervalo [-0.05,0.05]"
 )
 parser.add_argument(
     "--factAumento",
     type=int,
-    default=2,
+    default=0,
     help="Cantidad de datos nuevos a generar a partir de cada dato de entrenamiento"
 )
 carpeta="resultados/"
@@ -84,12 +84,13 @@ else:
     etiquetas=torch.load(ruta_anterior+"labels_all.pt",map_location=hiperparametros["device"])
 img.requires_grad_(False)
 #ejecutar aumento si aplica
-if parser.parse_args().tecAumento=="ruido":
-    from datos import adicion
-    img,etiquetas=adicion(img,parser.parse_args().factAumento,etiquetas)
-elif parser.parse_args().tecAumento=="escalamiento":
-    from datos import noAdicion
-    img,etiquetas=noAdicion(img,torch.rand(parser.parse_args().factAumento),"escalamiento",etiquetas)
+if parser.parse_args().tipoDatos=="destilados":
+    if parser.parse_args().tecAumento=="ruido":
+        from datos import adicion
+        img,etiquetas=adicion(img,parser.parse_args().factAumento,etiquetas)
+    elif parser.parse_args().tecAumento=="escalamiento":
+        from datos import noAdicion
+        img,etiquetas=noAdicion(img,torch.rand(parser.parse_args().factAumento),"escalamiento",etiquetas)
 maxi=torch.max(img)
 if maxi>1:
     img=img/maxi
