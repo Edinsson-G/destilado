@@ -122,23 +122,23 @@ def retropropagacion(data,target,device,optimizer,net,criterion):
 def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loader=None,device=torch.device("cpu")):
     net.to(device)
     net.train()
-    ciclo=tqdm(data_loader,total=len(data_loader), colour="red")
+    #ciclo=tqdm(data_loader,total=len(data_loader), colour="red")
+    ciclo=tqdm(range(1,epoch+1),colour="red")
     if val_loader==None:
         net.train()
-        for e in tqdm(range(1,epoch+1)):
-            print
+        for e in ciclo:
             perdida=AverageMeter()
-            for data,target in ciclo:
+            for data,target in tqdm(data_loader):
                 optimizer,net,loss,criterion,_=retropropagacion(data,target,device,optimizer,net,criterion)
-                ciclo.set_description(f"Entrenamiento [{e}/{epoch}]")
                 perdida.update(loss.item(),data.size(0))
-                ciclo.set_postfix(**{"pérdida":perdida.avg})
+            ciclo.set_description(f"Entrenamiento [{e}/{epoch}]")
+            ciclo.set_postfix(**{"pérdida":perdida.avg})
         retornar=(net,)
     else:
         acc_ent_hist=[]
         acc_val_hist=[]
         perdida=[]
-        for e in tqdm(range(1,epoch+1)):
+        for e in ciclo:
             train_loss = AverageMeter()
             train_acc = AverageMeter()
             test_loss = AverageMeter()
@@ -146,7 +146,7 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
             accuracy=Accuracy()
             acc_ent_iter=[]
             loss_iter=[]
-            for data,target in ciclo:
+            for data,target in data_loader:
                 optimizer,net,loss,criterion,output=retropropagacion(data,target,device,optimizer,net,criterion)
                 accuracy.update((output,target))
                 correct = accuracy.compute()
@@ -155,13 +155,13 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
 
                 train_acc.update(correct, data.size(0))
                 
-                dict_metrics = dict(loss=train_loss.avg,acc=train_acc.avg)
+            dict_metrics = dict(loss=train_loss.avg,acc=train_acc.avg)
 
 
-                ciclo.set_description(f'Network Training [{e} / {epoch}]')
-                ciclo.set_postfix(**dict_metrics)
-                loss_iter.append(train_loss.avg)
-                accuracy.reset()
+            ciclo.set_description(f'Network Training [{e} / {epoch}]')
+            ciclo.set_postfix(**dict_metrics)
+            loss_iter.append(train_loss.avg)
+            accuracy.reset()
             acc_ent_hist.append(torch.mean(torch.tensor(acc_ent_iter)))
             perdida.append(torch.mean(torch.tensor(loss_iter)))
             #iniciar con la validación
@@ -194,6 +194,7 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
     if test_loader!=None:
         #calcular accuracy de testeo
         net.eval()
+        accuracy=Accuracy()
         for img,etq in test_loader:
             img=img.to(device)
             etq=etq.to(device)

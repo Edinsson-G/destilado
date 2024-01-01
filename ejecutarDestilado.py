@@ -43,7 +43,7 @@ parser.add_argument("--ipc",
                     help="Imagenes por clase, obligatorio para iniciar un destilado nuevo")
 parser.add_argument("--lrImg",
                     type=float,
-                    default=0.01,
+                    default=0.001,
                     help="Tasa de aprendizaje del algoritmo de destilamiento, requerido solo en caso de iniciar un nuevo destilado.")
 parser.add_argument("--iteraciones",
                     type=int,
@@ -80,6 +80,18 @@ parser.add_argument(
     default=False,
     help="En caso que no se haya especificado una carpeta anterior verificar si la carpeta destino existe para reanudar el destilado que contiene."
 )
+parser.add_argument(
+    "--cicloInterno",
+    type=int,
+    default=1,
+    help="Cantidad de epocas a entrenar la red por cada ciclo externo"
+)
+parser.add_argument(
+    "--cicloExterno",
+    default=50,
+    type=int,
+    help="Cantidad de ciclos internos por cada iteración"
+)
 device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
 torch.set_default_device(device)
 if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
@@ -105,7 +117,8 @@ ol_var=[
 #variables que se guardarán al finalizar cada epoca
 ep_var=["hist_perdida","hist_acc"]
 #definir carpetas anteriores y destino
-destino=f"Modelo+{parser.parse_args().modelo}+conjunto+{parser.parse_args().conjunto}+ipc+{parser.parse_args().ipc}+ritmo+de+aprendizaje+{parser.parse_args().lrImg}+aumento+{parser.parse_args().tecAumento}"if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
+#destino=f"Modelo+{parser.parse_args().modelo}+conjunto+{parser.parse_args().conjunto}+ipc+{parser.parse_args().ipc}+ritmo+de+aprendizaje+{parser.parse_args().lrImg}+aumento+{parser.parse_args().tecAumento}"if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
+destino=f"ritmo+de+aprendizaje+{parser.parse_args().lrImg}+aumento+{parser.parse_args().tecAumento}+ol+{parser.parse_args().cicloExterno}+innLoop+{parser.parse_args().cicloInterno}"if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
 carpetaAnterior=parser.parse_args().carpetaAnterior
 if carpetaAnterior==None and parser.parse_args().reanudar and destino in os.listdir(carpeta):
     carpetaAnterior=destino
@@ -173,7 +186,7 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
         if etiqueta_ingnorada in clases:
             num_classes=num_classes-1
     del img,gt,clases
-    hiperparametros["n_classes"]=num_classes
+    #hiperparametros["n_classes"]=num_classes
     #preprocesar datos reales
     images_all = []
     labels_all = []
@@ -254,7 +267,7 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
     print("iteración",iteracion)
     perd_acum=0
     #actualizar imágenes sintéticas
-    for ol in tqdm(range(ult_ol,10)):
+    for ol in tqdm(range(ult_ol,parser.parse_args().cicloExterno)):
         net.train()
         perdida=torch.tensor(0.0).to(device)
         for parametros in list(net.parameters()):
@@ -282,12 +295,12 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
         #entrenar red
         for parametros in list(net.parameters()):
             parametros.requires_grad = True
-        net,accTest=train(
+        (net,)=train(
             net,
             optimizador_red,
             criterion,
             train_loader,
-            50,
+            parser.parse_args().cicloInterno,
             device=device
         )
         #guardar generador de números pseuadoaleatorios
