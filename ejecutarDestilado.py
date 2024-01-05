@@ -246,7 +246,7 @@ else:#se va a reanudar un entrenatiento previo
     #restablecer el estado del generador de números pseudoaleatorios
     torch.set_rng_state(torch.load(ruta_anterior+"tensorSemilla.pt"))
     #carguar las variables de global_var y ol_var
-    (val_loader,images_all,labels_all,label_syn,indices_class,hiperparametros,train_loader,ult_ol,perd_acum,image_syn)=tuple(torch.load(ruta+archivo+".pt")for archivo in global_var+ol_var)
+    (val_loader,images_all,labels_all,label_syn,indices_class,hiperparametros,train_loader,ult_ol,perd_acum,image_syn)=tuple(torch.load(ruta+archivo+".pt",map_location=device)for archivo in global_var+ol_var)
     #carguar las variables de ep_var
     hist_perdida=torch.load(ruta+"hist_perdida.pt")if os.path.exists(ruta+"hist_perdida.pt")else []
     hist_acc=torch.load(ruta+"hist_acc.pt")if os.path.exists(ruta+"hist_acc.pt")else []
@@ -254,10 +254,11 @@ else:#se va a reanudar un entrenatiento previo
         #en el entrenamiento anterior el argumento --model fue True, image_syn es realemente el último elemento de ese historial
         historial_imagenes_sinteticas=copy.deepcopy(image_syn)
         image_syn=image_syn[-1]
+    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg, momentum=0.5)
     #modelo y optimizadores
     net,optimizador_red,criterion,_= get_model(hiperparametros["model"],
                                                hiperparametros["device"],**hiperparametros)
-    num_classes=hiperparametros["n_classes"]
+    num_classes=hiperparametros["n_classes"]-1
     ipc=int(len(label_syn)/hiperparametros["n_classes"])
     channel=image_syn.shape[1]
 print("Los resultados se guardarán en ",ruta)
@@ -272,7 +273,7 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
         perdida=torch.tensor(0.0).to(device)
         for parametros in list(net.parameters()):
             parametros.requires_grad = False
-        for clase in tqdm(range(num_classes)):
+        for clase in range(num_classes):
             #salida sin aumento
             img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
             img_sin=image_syn[clase*ipc:(clase+1)*ipc]
