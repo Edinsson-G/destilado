@@ -263,7 +263,8 @@ def adicion(imgs,fact_aum,etq=None):
     copia=imgs
     copia_etq=etq
     for _ in range(fact_aum):
-        imgs=torch.cat((imgs,copia+torch.rand(copia.shape)/10-0.05))
+        #sumar un ruido en el intervalo [-0.5,0.5]
+        imgs=torch.cat((imgs,copia+torch.rand(copia.shape)-0.5))
         if etq!=None:
             etq=torch.cat((etq,copia_etq))
     if etq==None:
@@ -280,9 +281,27 @@ def noAdicion(imgs,parametros,metodo,etq=None):
         nuevosDatos=torch.pow
     elif metodo=="escalamiento":
         nuevosDatos=multiplicacion
+    #operacion matematica que aplica el aumento
     for parametro in parametros:
         imgs=torch.cat((imgs,nuevosDatos(copia,parametro)))
     if etq==None:
         return imgs
     else:
         return imgs,torch.repeat_interleave(etq,len(parametros),0)
+def aumento(tecnica,replicas,img,etq=None):
+    #tecnica: método de aumento
+    #replicas: cantidad de replicas por cada dato
+    #img: imagenes sin aumentar
+    #etq: etiquetas sin aumentar
+    #funciones que generarán cada nueva muestra según la técnica
+    funcion={
+        "ruido":lambda tensor:tensor+torch.rand(tensor.shape)-0.5,
+        "escalamiento":lambda tensor:tensor*(torch.rand(1).item()/4+0.85),
+        "potencia":lambda tensor:torch.pow(tensor,torch.ran(1).item()/4+0.85)
+    }
+    for i in range(len(img)):
+        for _ in range(replicas):
+            img=torch.cat((img,torch.unsqueeze(funcion[tecnica](img[i]),0)))
+            if etq!=None:
+                etq=torch.cat((etq,torch.unsqueeze(etq[i],0)))
+    return img if etq==None else (img,etq)

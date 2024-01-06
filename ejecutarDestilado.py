@@ -83,14 +83,20 @@ parser.add_argument(
 parser.add_argument(
     "--cicloInterno",
     type=int,
-    default=1,
+    default=2,
     help="Cantidad de epocas a entrenar la red por cada ciclo externo"
 )
 parser.add_argument(
     "--cicloExterno",
-    default=50,
+    default=1,
     type=int,
     help="Cantidad de ciclos internos por cada iteración"
+)
+parser.add_argument(
+    "--aumentoVal",
+    default=False,
+    type=bool,
+    help="Si es True y tecAumento es diferente de None se hará un aumento similar al de cada destilado al momento de validar el rendimiento del modelo."
 )
 device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
 torch.set_default_device(device)
@@ -117,8 +123,8 @@ ol_var=[
 #variables que se guardarán al finalizar cada epoca
 ep_var=["hist_perdida","hist_acc"]
 #definir carpetas anteriores y destino
-#destino=f"Modelo+{parser.parse_args().modelo}+conjunto+{parser.parse_args().conjunto}+ipc+{parser.parse_args().ipc}+ritmo+de+aprendizaje+{parser.parse_args().lrImg}+aumento+{parser.parse_args().tecAumento}"if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
-destino=f"ritmo+de+aprendizaje+{parser.parse_args().lrImg}+aumento+{parser.parse_args().tecAumento}+ol+{parser.parse_args().cicloExterno}+innLoop+{parser.parse_args().cicloInterno}"if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
+#destino=f"ritmo+de+aprendizaje+{parser.parse_args().lrImg}+aumento+{parser.parse_args().tecAumento}+ol+{parser.parse_args().cicloExterno}+innLoop+{parser.parse_args().cicloInterno}"if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
+destino=f"{parser.parse_args().tecAumento}_{parser.parse_args().aumentoVal}_{parser.parse_args().factAumento}" if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
 carpetaAnterior=parser.parse_args().carpetaAnterior
 if carpetaAnterior==None and parser.parse_args().reanudar and destino in os.listdir(carpeta):
     carpetaAnterior=destino
@@ -278,13 +284,24 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
             img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
             img_sin=image_syn[clase*ipc:(clase+1)*ipc]
             #aplicar aumento
+            """
             if parser.parse_args().tecAumento=="ruido":
                 img_real=adicion(img_real,parser.parse_args().factAumento)
                 img_sin=adicion(img_sin,parser.parse_args().factAumento)
-            elif parser.parse_args().tecAumento=="escalamiento"or parser.parse_args().tecAumento=="potencia":
-                paramAumento=torch.clip(torch.rand(parser.parse_args().factAumento),0.01,0.99)
+            elif parser.parse_args().tecAumento!="None":
+                if parser.parse_args().tecAumento=="escalamiento":
+                    #paramAumento=torch.clip(torch.rand(parser.parse_args().factAumento),0.01,0.99)
+                    #ruido entre 0.85 y 1.1
+                    paramAumento=torch.rand(parser.parse_args().factAumento)/4+0.85
+                else:
+                    #tecnica de aumento potencia
+                    paramAumento=torch.rand(parser.parse_args().factAumento)/20
                 img_real=noAdicion(img_real,paramAumento,parser.parse_args().tecAumento)
                 img_sin=noAdicion(img_sin,paramAumento,parser.parse_args().tecAumento)
+            """
+            if parser.parse_args().tecAumento!="None":
+                img_real=aumento(parser.parse_args().tecAumento,parser.parse_args().factAumento,img_real)
+                img_sin=aumento(parser.parse_args().tecAumento,parser.parse_args().factAumento,img_sin)
             #aplicar embebido
             salida_real=embebido(net,img_real).detach()
             output_sin=embebido(net,img_sin)
@@ -316,16 +333,32 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
             torch.save(historial_imagenes_sinteticas,ruta+"image_syn.pt")
         else:
             torch.save(image_syn,ruta+"image_syn.pt")
+    #validar red
     #reinicar red
     net,optimizador_red,criterion,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
-    _,acc=train(net,
-                optimizador_red,
-                criterion,
-                DataLoader(TensorDataset(image_syn.detach(),label_syn),batch_size=hiperparametros["batch_size"],shuffle=True,num_workers=0),
-                100,
-                val_loader,#se usarán los datos de validación cómo si fueran los de testeo en este caso
-                device=device
-                )
+    #aumentar datos si es el caso
+    if parser.parse_args().aumentoVal:
+        entr_val,etq_val=aumento(
+            parser.parse_args().tecAumento,
+            parser.parse_args().factAumento,
+            copy.deepcopy(image_syn).detach(),
+            label_syn
+        )
+    else:
+        entr_val=copy.deepcopy(image_syn).detach()
+        etq_val=label_syn
+    _,acc=train(
+        net,
+        optimizador_red,
+        criterion,
+        DataLoader(
+            TensorDataset(entr_val,etq_val),
+            batch_size=hiperparametros["batch_size"],
+            shuffle=True,num_workers=0
+        ),
+        test_loader=val_loader,#se usarán los datos de validación cómo si fueran los de testeo en este caso
+        device=device
+    )
     #reiniciar pesos de la red para la siguiente iteración
     net,optimizador_red,criterion,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
     #disminuir la tasa de aprendizaje si después de 100 iteraciones la función de pérdida no ha disminuido
