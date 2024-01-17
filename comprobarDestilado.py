@@ -80,17 +80,13 @@ if parser.parse_args().tipoDatos=="destilados":
             img=img[parser.parse_args().indice]
     etiquetas=torch.load(ruta_anterior+"label_syn.pt",map_location=hiperparametros["device"])
 else:
-    img=torch.load(ruta_anterior+"images_all.pt",map_location=hiperparametros["device"])
+    img=torch.load(ruta_anterior+"images_all.pt",map_location=hiperparametros["device"]).detach()
     etiquetas=torch.load(ruta_anterior+"labels_all.pt",map_location=hiperparametros["device"])
 img.requires_grad_(False)
 #ejecutar aumento si aplica
-if parser.parse_args().tipoDatos=="destilados":
-    if parser.parse_args().tecAumento=="ruido":
-        from datos import adicion
-        img,etiquetas=adicion(img,parser.parse_args().factAumento,etiquetas)
-    elif parser.parse_args().tecAumento=="escalamiento":
-        from datos import noAdicion
-        img,etiquetas=noAdicion(img,torch.rand(parser.parse_args().factAumento),"escalamiento",etiquetas)
+if parser.parse_args().tecAumento!="ninguno":
+    from datos import aumento
+    img,etiquetas=aumento(parser.parse_args().tecAumento,parser.parse_args().factAumento,img,etiquetas)
 maxi=torch.max(img)
 if maxi>1:
     img=img/maxi
