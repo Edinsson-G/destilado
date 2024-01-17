@@ -8,8 +8,6 @@ from utils import sample_gt
 from models import get_model
 import math
 from perdida import *
-import os
-import warnings
 #definir hiperparametros a utilizar según el modelo
 class TensorDataset(Dataset):
     def __init__(self, images, labels): # images: n x c x h x w tensor
@@ -174,7 +172,7 @@ def evaluate_synset(net, images_train, labels_train, testloader, learningrate, b
     print('Evaluate: epoch = %04d, train loss = %.6f, train acc = %.4f, test acc = %.4f' % (Epoch, loss_train, acc_train, acc_test))
 
     return net, acc_train, acc_test
-def graficar(firmas,etiquetas,num_classes=None,figsize=(35,15),filas=None,columnas=None):
+def graficar(firmas,etiquetas,num_classes=None,figsize=(35,15),filas=None,columnas=None,ruta=None,titulo=None):
     if num_classes==None:
         num_classes=len(torch.unique(etiquetas))
     if filas==None or columnas==None:
@@ -185,7 +183,10 @@ def graficar(firmas,etiquetas,num_classes=None,figsize=(35,15),filas=None,column
             filas=filas-1
             columnas=num_classes/filas
         columnas=int(columnas)
+    
     fig,axs=plt.subplots(filas,columnas,figsize=figsize)
+    if titulo!=None:
+        plt.suptitle(titulo, figure=plt.gcf(),fontsize=50)
     if filas!=1:
         etiquetas_unicas=torch.unique(etiquetas)
         #matriz bidimensional que asigna a cada etiqueta una posicion i,j que corresponde a la posicion i,j del subplot en el que se graficaran las firmas de su clase, se inicializa como un vector con etiquetas inexistentes
@@ -214,7 +215,13 @@ def graficar(firmas,etiquetas,num_classes=None,figsize=(35,15),filas=None,column
         #poner a cada subplot su respectivo subtitulo
         for i in range(columnas):
             axs[i].set_title(int(ind[i]))
-    plt.show()
+    if ruta!=None:
+        plt.savefig(ruta)
+        plt.close()
+    else:
+        plt.show()
+        
+        
 """
 def aumento(img_orig,tecnica,fact_aum=None):
     #img_orig: tensor del lote de imagenes a aumetar
@@ -263,7 +270,8 @@ def adicion(imgs,fact_aum,etq=None):
     copia=imgs
     copia_etq=etq
     for _ in range(fact_aum):
-        imgs=torch.cat((imgs,copia+torch.rand(copia.shape)/10-0.05))
+        #sumar un ruido en el intervalo [-0.5,0.5]
+        imgs=torch.cat((imgs,copia+torch.rand(copia.shape)-0.5))
         if etq!=None:
             etq=torch.cat((etq,copia_etq))
     if etq==None:
@@ -280,9 +288,27 @@ def noAdicion(imgs,parametros,metodo,etq=None):
         nuevosDatos=torch.pow
     elif metodo=="escalamiento":
         nuevosDatos=multiplicacion
+    #operacion matematica que aplica el aumento
     for parametro in parametros:
         imgs=torch.cat((imgs,nuevosDatos(copia,parametro)))
     if etq==None:
         return imgs
     else:
         return imgs,torch.repeat_interleave(etq,len(parametros),0)
+def aumento(tecnica,replicas,img,etq=None):
+    #tecnica: método de aumento
+    #replicas: cantidad de replicas por cada dato
+    #img: imagenes sin aumentar
+    #etq: etiquetas sin aumentar
+    #funciones que generarán cada nueva muestra según la técnica
+    funcion={
+        "ruido":lambda tensor:tensor+(torch.rand(tensor.shape)/4+0.85),
+        "escalamiento":lambda tensor:tensor*(torch.rand(1).item()/4+0.85),
+        "potencia":lambda tensor:torch.pow(tensor,torch.ran(1).item()/4+0.85)
+    }
+    for i in range(len(img)):
+        for _ in range(replicas):
+            img=torch.cat((img,torch.unsqueeze(funcion[tecnica](img[i]),0)))
+            if etq!=None:
+                etq=torch.cat((etq,torch.unsqueeze(etq[i],0)))
+    return img if etq==None else (img,etq)

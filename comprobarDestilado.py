@@ -44,13 +44,13 @@ parser.add_argument(
     "--tecAumento",
     type=str,
     choices=["ruido","escalamiento","ninguno"],
-    default="ruido",
+    default="ninguno",
     help="Técnica que se utilizará para hacer aumento de datos. Ruido consiste en sumar ruido pseudoaleatorio uniformemente distribuido en el intervalo [-0.05,0.05]"
 )
 parser.add_argument(
     "--factAumento",
     type=int,
-    default=2,
+    default=0,
     help="Cantidad de datos nuevos a generar a partir de cada dato de entrenamiento"
 )
 carpeta="resultados/"
@@ -68,28 +68,25 @@ torch.manual_seed(parser.parse_args().semilla)
 print("Algoritmo ejecutándose en",hiperparametros["device"],"\n\n")
 #cargua de los datos de entrenamiento
 if parser.parse_args().tipoDatos=="destilados":
-    img=torch.load(ruta_anterior+"imgs.pt",map_location=hiperparametros["device"])
+    img=torch.load(ruta_anterior+"image_syn.pt",map_location=hiperparametros["device"])
     if type(img)==list:
         #en el destilado el parámetro historial era True
         if parser.parse_args().indice==None:
             #se escoge el indice de la iteración con menor pérdida
-            perdida=torch.load(ruta_anterior+"histPerdida.pt")
+            perdida=torch.load(ruta_anterior+"hist_perdida.pt")
             img=img[perdida.index(min(perdida))]
             del perdida
         else:
             img=img[parser.parse_args().indice]
     etiquetas=torch.load(ruta_anterior+"label_syn.pt",map_location=hiperparametros["device"])
 else:
-    img=torch.load(ruta_anterior+"images_all.pt",map_location=hiperparametros["device"])
+    img=torch.load(ruta_anterior+"images_all.pt",map_location=hiperparametros["device"]).detach()
     etiquetas=torch.load(ruta_anterior+"labels_all.pt",map_location=hiperparametros["device"])
 img.requires_grad_(False)
 #ejecutar aumento si aplica
-if parser.parse_args().tecAumento=="ruido":
-    from datos import adicion
-    img,etiquetas=adicion(img,parser.parse_args().factAumento,etiquetas)
-elif parser.parse_args().tecAumento=="escalamiento":
-    from datos import noAdicion
-    img,etiquetas=noAdicion(img,torch.rand(parser.parse_args().factAumento),"escalamiento",etiquetas)
+if parser.parse_args().tecAumento!="ninguno":
+    from datos import aumento
+    img,etiquetas=aumento(parser.parse_args().tecAumento,parser.parse_args().factAumento,img,etiquetas)
 maxi=torch.max(img)
 if maxi>1:
     img=img/maxi
@@ -97,11 +94,10 @@ if maxi>1:
 with open(f"EstadisticosDatos{parser.parse_args().tipoDatos}.txt", "w") as archivotxt:
     print(f"media: {torch.mean(img)}\ndesviación:{torch.std(img)}",file=archivotxt)
 #carga del modelo y optimizadores
-hiperparametros["n_classes"]=hiperparametros["n_classes"]+1
+#hiperparametros["n_classes"]=hiperparametros["n_classes"]+1
 red,optimizador,criteiron,_=get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
 print("Iniciando entrenamiento con datos",parser.parse_args().tipoDatos)
-for variable,archivo in zip(
-    train(red,
+red,perdida,accEnt,accVal,accTest=train(red,
           optimizador,
           criteiron,
           DataLoader(TensorDataset(img,etiquetas),
@@ -112,7 +108,10 @@ for variable,archivo in zip(
           parser.parse_args().epocas,
           torch.load(ruta_anterior+"test_loader.pt",map_location=hiperparametros["device"]),
           torch.load(ruta_anterior+"val_loader.pt",map_location=hiperparametros["device"]),
-          hiperparametros["device"]),
-    ["redEntrenada","perdida","accTrain","accVal","accTest"]
-):
+          hiperparametros["device"])
+for variable,archivo in zip([red,perdida,accEnt,accVal],
+                            ["redEntrenada","perdida","accTrain","accVal"]):
     torch.save(variable,carpeta+carpetaDestino+f"/{archivo}Datos{parser.parse_args().tipoDatos}.pt")
+#guardar accuracy de testeo
+with open(carpeta+carpetaDestino+"/accTestDatosdestilados.txt", "w") as txtfile:
+    print("Accuracy de testeo para datos destilados: {}".format(accTest), file=txtfile)
