@@ -128,11 +128,11 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
         net.train()
         for e in ciclo:
             perdida=AverageMeter()
-            for data,target in tqdm(data_loader):
+            for data,target in data_loader:
                 optimizer,net,loss,criterion,_=retropropagacion(data,target,device,optimizer,net,criterion)
                 perdida.update(loss.item(),data.size(0))
             ciclo.set_description(f"Entrenamiento [{e}/{epoch}]")
-            ciclo.set_postfix(**{"pérdida":perdida.avg})
+            #ciclo.set_postfix(**{"pérdida":perdida.avg})
         retornar=(net,)
     else:
         acc_ent_hist=[]
@@ -201,14 +201,8 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
             accuracy.update((net(img),etq))
             acc_test=float(accuracy.compute())
             accuracy.reset()
-        print("accuracy de testeo",acc_test)
         retornar=retornar+(acc_test,)
     return retornar
-        print("accuracy de testeo:",acc_test)
-    if test_loader!=None and val_loader!=None:
-        return net,perdida,acc_ent_hist,acc_val_hist,acc_test
-    else:
-        return net
 """
 def retroporopagacion(data,target,optimizer,net,device,criterion):
     data, target = data.to(device), target.to(device)

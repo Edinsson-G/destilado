@@ -220,81 +220,6 @@ def graficar(firmas,etiquetas,num_classes=None,figsize=(35,15),filas=None,column
         plt.close()
     else:
         plt.show()
-        
-        
-"""
-def aumento(img_orig,tecnica,fact_aum=None):
-    #img_orig: tensor del lote de imagenes a aumetar
-    #fact_aum: factor de aumento (ver ayuda del archivo ejecutarDestilado.py)
-    #tecnica: nombre de la tecnica usar
-    #dispositivo: dispositivo de pytorch en el que se alojarán los tensores
-    #inicializacion de tensores aumentados
-    #tamaño de lote aumentado
-    if fact_aum>0:
-        if tecnica=="escalamiento":
-            maxi=torch.max(img_orig)
-            if maxi!=1:
-                fact_aum=1
-            else: 
-                fact_aum=0
-                warnings.warn("Los datos reales ya están entre 0 y 1, no hay nada que escalar")
-        dim_img_aum=list(img_orig.shape)
-        dim_img_aum[0]=int(dim_img_aum[0]*(1+fact_aum))
-        #inicializar tensor de imagenes aumentadas
-        dispositivo=torch.device(f"cuda:{img_orig.get_device()}"if img_orig.get_device()>=0 else "cpu")
-        img_aum=torch.empty(dim_img_aum,device=dispositivo)
-        #recorrer tensores aumentados para llenarlos
-        ind_aum=0#indice actual de los tensores aumentados
-        ind_orig=0#indice actual en el tensor de datos no aumentados
-        while ind_aum<dim_img_aum[0]:
-            #se asigna la pareja de datos original
-            img_aum[ind_aum]=img_orig[ind_orig]
-            #se asignan los datos nuevos
-            ind_aum+=1
-            for i in range(fact_aum):
-                if tecnica=="ruido":
-                    img_aum[ind_aum]=torch.clip(img_orig[ind_orig]+torch.rand(img_orig[ind_orig].shape,device=dispositivo)/10-0.05,0,1)
-                elif tecnica=="escalamiento":
-                    img_aum[ind_aum]=img_orig[ind_orig]/maxi
-                else:
-                    exit(f"Tecnica de aumento {tecnica} no conocida")
-                ind_aum+=1
-            #ind_orig=ind_orig+1
-        img_aum.requires_grad_(img_orig.requires_grad)
-    else:
-        img_aum=img_orig
-    return img_aum
-"""
-#hacer aumento sumando ruido
-def adicion(imgs,fact_aum,etq=None):
-    copia=imgs
-    copia_etq=etq
-    for _ in range(fact_aum):
-        #sumar un ruido en el intervalo [-0.5,0.5]
-        imgs=torch.cat((imgs,copia+torch.rand(copia.shape)-0.5))
-        if etq!=None:
-            etq=torch.cat((etq,copia_etq))
-    if etq==None:
-        return torch.clip(imgs,0,1)
-    else:
-        return torch.clip(imgs,0,1),etq
-#multiplicar tensor por un escalar
-def multiplicacion(escalar,tensor):
-    return escalar*tensor
-#hacer aumento multiplicando o elevando a numeros aleatorios
-def noAdicion(imgs,parametros,metodo,etq=None):
-    copia=imgs
-    if metodo=="potencia":
-        nuevosDatos=torch.pow
-    elif metodo=="escalamiento":
-        nuevosDatos=multiplicacion
-    #operacion matematica que aplica el aumento
-    for parametro in parametros:
-        imgs=torch.cat((imgs,nuevosDatos(copia,parametro)))
-    if etq==None:
-        return imgs
-    else:
-        return imgs,torch.repeat_interleave(etq,len(parametros),0)
 def aumento(tecnica,replicas,img,etq=None):
     #tecnica: método de aumento
     #replicas: cantidad de replicas por cada dato
@@ -305,10 +230,10 @@ def aumento(tecnica,replicas,img,etq=None):
         "ruido":lambda tensor:tensor+(torch.rand(tensor.shape)/4+0.85),
         "escalamiento":lambda tensor:tensor*(torch.rand(1).item()/4+0.85),
         "potencia":lambda tensor:torch.pow(tensor,torch.ran(1).item()/4+0.85)
-    }
+    }[tecnica]
     for i in range(len(img)):
         for _ in range(replicas):
-            img=torch.cat((img,torch.unsqueeze(funcion[tecnica](img[i]),0)))
+            img=torch.cat((img,torch.unsqueeze(funcion(img[i]),0)))
             if etq!=None:
                 etq=torch.cat((etq,torch.unsqueeze(etq[i],0)))
     return img if etq==None else (img,etq)

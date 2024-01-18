@@ -67,7 +67,7 @@ parser.add_argument(
     type=str,
     choices=["muestreo","aleatoriedad"],
     help="Inicialización de las imágenes destiladas, muestreo significa seleccionar aleatoriamente muestras del conjunto de entrenamiento original y aleatoriedad significa inicializarlas siguiendo una distribución uniforme con números entre 0 y 1.",
-    default="aleatoriedad"
+    default="muestreo"
 )
 parser.add_argument(
     "--carpetaDestino",
@@ -79,18 +79,6 @@ parser.add_argument(
     type=bool,
     default=False,
     help="En caso que no se haya especificado una carpeta anterior verificar si la carpeta destino existe para reanudar el destilado que contiene."
-)
-parser.add_argument(
-    "--cicloInterno",
-    type=int,
-    default=2,
-    help="Cantidad de epocas a entrenar la red por cada ciclo externo"
-)
-parser.add_argument(
-    "--cicloExterno",
-    default=1,
-    type=int,
-    help="Cantidad de ciclos internos por cada iteración"
 )
 device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
 torch.set_default_device(device)
@@ -105,18 +93,10 @@ print("Algoritmo ejecutandose en",device)
 carpeta="resultados"
 if carpeta not in os.listdir('.'):
     os.mkdir(carpeta)
-#lista de variables que se deberán guardar o carguar segun sea el caso
-#variables que solo se deben carguar o guardar una sola vez durante la ejecucion
+#variables a guardar en disco
 global_var=["test_loader","val_loader","images_all","labels_all","label_syn","indices_class","hiperparametros","train_loader"]
-#variables que se guardarán cada ol
-ol_var=[
-    "ult_ol",#ultimo ol completado de la epoca actual
-    "perd_acum",#perdida acumulada en el ol
-    "image_syn",
-    "optimizer_img"
-]
-#variables que se guardarán al finalizar cada epoca
-ep_var=["hist_perdida","acc_sin_aum","acc_aum"]
+#variables que se guardarán al finalizar cada iteración
+ep_var=["hist_perdida","acc_sin_aum","acc_aum","image_syn","optimizer_img"]
 #definir carpetas anteriores y destino
 #destino=f"ritmo+de+aprendizaje+{parser.parse_args().lrImg}+aumento+{parser.parse_args().tecAumento}+ol+{parser.parse_args().cicloExterno}+innLoop+{parser.parse_args().cicloInterno}"if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
 destino=f"ol_{parser.parse_args().cicloExterno}_il_{parser.parse_args().cicloInterno}_{parser.parse_args().inicializacion}" if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
@@ -128,7 +108,7 @@ if destino not in os.listdir(carpeta):
 if carpetaAnterior!=None:
     #verificar la existencia de todos los archivos necesarios para reanudar el destilado (para ello se debió haber realizado por lo menos un ol)
     reanudar=True
-    for nombre_archivo in ol_var+global_var:
+    for nombre_archivo in global_var:
         if nombre_archivo+".pt" not in os.listdir(carpeta+'/'+destino):
             reanudar=False
             warnings.warn(f"No se encontó el archivo {carpeta}/{destino}/{nombre_archivo}.pt, se iniciará el entrenamiento desde 0.")
@@ -222,7 +202,6 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
     hist_perdida=[]
     acc_sin_aum=[]
     acc_aum=[]
-    ult_ol=0
     max_acc=-0.1
     #guardar variables globales
     for variable,archivo in zip(
@@ -255,18 +234,16 @@ else:#se va a reanudar un entrenatiento previo
      label_syn,
      indices_class,
      hiperparametros,
-     train_loader,
-     ult_ol,
-     perd_acum,
-     image_syn,
-     optimizer_img)=tuple(
-         torch.load(ruta+archivo+".pt",map_location=device)for archivo in global_var+ol_var
+     train_loader)=tuple(
+         torch.load(ruta+archivo+".pt",map_location=device)for archivo in global_var
      )
     #carguar las variables de ep_var
     hist_perdida=torch.load(ruta+"hist_perdida.pt")if os.path.exists(ruta+"hist_perdida.pt")else []
     acc_sin_aum=torch.load(ruta+"acc_sin_aum.pt")if os.path.exists(ruta+"acc_sin_aum.pt")else []
     max_acc=-0.1 if acc_sin_aum==[]else max(acc_sin_aum)
     acc_aum=torch.load(ruta+"acc_aum.pt")if os.path.exists(ruta+"acc_aum.pt")else []
+    image_syn=torch.load(ruta+"image_syn.pt")
+    optimizer_img=torch.load(ruta+"optimizer_img.pt")
     if type(image_syn)==list:
         #en el entrenamiento anterior el argumento --model fue True, image_syn es realemente el último elemento de ese historial
         historial_imagenes_sinteticas=copy.deepcopy(image_syn)
@@ -280,50 +257,33 @@ else:#se va a reanudar un entrenatiento previo
 print("Los resultados se guardarán en ",ruta)
 #optimizer_img for synthetic data
 planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"max",patience=100,verbose=True)
-for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
-    print("iteración",iteracion)
-    perd_acum=0
+ciclo=tqdm(range(len(hist_perdida),parser.parse_args().iteraciones+1))
+for iteracion in ciclo:
+    ciclo.set_description_str(f"Iteración {iteracion}/{parser.parse_args().iteraciones}")
     #actualizar imágenes sintéticas
-    for ol in tqdm(range(ult_ol,parser.parse_args().cicloExterno)):
-        net.train()
-        perdida=torch.tensor(0.0).to(device)
-        for parametros in list(net.parameters()):
-            parametros.requires_grad = False
-        for clase in range(num_classes):
-            #salida sin aumento
-            img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
-            img_sin=image_syn[clase*ipc:(clase+1)*ipc]
-            #aplicar aumento
-            if parser.parse_args().tecAumento!="None":
-                img_real=aumento(parser.parse_args().tecAumento,parser.parse_args().factAumento,img_real)
-                img_sin=aumento(parser.parse_args().tecAumento,parser.parse_args().factAumento,img_sin)
-            #aplicar embebido
-            salida_real=embebido(net,img_real).detach()
-            output_sin=embebido(net,img_sin)
-            #funcion de perdida
-            perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)+torch.sum((torch.std(salida_real,dim=0)-torch.std(output_sin,dim=0))**2)
-        optimizer_img.zero_grad()
-        perdida.backward()
-        optimizer_img.step()
-        #entrenar red
-        for parametros in list(net.parameters()):
-            parametros.requires_grad = True
-        (net,)=train(
-            net,
-            optimizador_red,
-            criterion,
-            train_loader,
-            parser.parse_args().cicloInterno,
-            device=device
-        )
-        #guardar generador de números pseuadoaleatorios
-        torch.save(torch.get_rng_state(),ruta+"tensorSemilla.pt")
-        #guardar registros de ol
-        perd_acum+=perdida.item()
-        ult_ol=ol
-        for variable,archivo in zip((ult_ol,perd_acum,image_syn,optimizer_img),
-                                    ol_var):
-            torch.save(variable,ruta+archivo+".pt")
+    net.train()
+    perdida=torch.tensor(0.0).to(device)
+    for parametros in list(net.parameters()):
+        parametros.requires_grad = False
+    for clase in range(num_classes):
+        #salida sin aumento
+        img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
+        img_sin=image_syn[clase*ipc:(clase+1)*ipc]
+        #aplicar aumento
+        if parser.parse_args().tecAumento!="None":
+            img_real=aumento(parser.parse_args().tecAumento,parser.parse_args().factAumento,img_real)
+            img_sin=aumento(parser.parse_args().tecAumento,parser.parse_args().factAumento,img_sin)
+        #aplicar embebido
+        salida_real=embebido(net,img_real).detach()
+        output_sin=embebido(net,img_sin)
+        #funcion de perdida
+        perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)+torch.sum((torch.std(salida_real,dim=0)-torch.std(output_sin,dim=0))**2)
+    optimizer_img.zero_grad()
+    perdida.backward()
+    optimizer_img.step()
+    #guardar generador de números pseuadoaleatorios
+    torch.save(torch.get_rng_state(),ruta+"tensorSemilla.pt")
+    #guardar registros de ol
     if parser.parse_args().historial:
         historial_imagenes_sinteticas.append(copy.deepcopy(image_syn).to("cpu"))
         torch.save(historial_imagenes_sinteticas,ruta+"hist_img.pt")        
@@ -374,8 +334,7 @@ for iteracion in range(len(hist_perdida),parser.parse_args().iteraciones+1):
         max_acc=accSinAum
     acc_sin_aum.append(accSinAum)
     acc_aum.append(accAum)
-    hist_perdida.append(perd_acum/10)
-    for variable,archivo in zip((hist_perdida,acc_sin_aum,acc_aum),ep_var):
+    hist_perdida.append(perdida.item())
+    for variable,archivo in zip((hist_perdida,acc_sin_aum,acc_aum,image_syn,optimizer_img),ep_var):
         torch.save(variable,ruta+archivo+".pt")
-    print("iteracion:",iteracion,"pérdida:",hist_perdida[-1],"acc: con aumento:",accAum,"sin aumento: ",accSinAum)
-    print("Iteración",iteracion)
+    ciclo.set_postfix(pérdida=hist_perdida[-1],accAum=accAum,accSinAum=accSinAum)
