@@ -81,7 +81,7 @@ parser.add_argument(
     help="En caso que no se haya especificado una carpeta anterior verificar si la carpeta destino existe para reanudar el destilado que contiene."
 )
 device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
-torch.set_default_device(device)
+#torch.set_default_device(device)
 if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
     exit("Se especificó un factor de aumento de aumento pero no un método de aumento.")
 elif parser.parse_args().factAumento<0:
@@ -96,7 +96,7 @@ if carpeta not in os.listdir('.'):
 #variables a guardar en disco
 global_var=["test_loader","val_loader","images_all","labels_all","label_syn","indices_class","hiperparametros","train_loader"]
 #variables que se guardarán al finalizar cada iteración
-ep_var=["hist_perdida","acc_sin_aum","acc_aum","image_syn","optimizer_img"]
+ep_var=["hist_perdida","acc_aum","image_syn","optimizer_img"]
 #definir carpetas anteriores y destino
 #destino=f"ritmo+de+aprendizaje+{parser.parse_args().lrImg}+aumento+{parser.parse_args().tecAumento}+ol+{parser.parse_args().cicloExterno}+innLoop+{parser.parse_args().cicloInterno}"if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
 destino=f"ol_{parser.parse_args().cicloExterno}_il_{parser.parse_args().cicloInterno}_{parser.parse_args().inicializacion}" if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
@@ -200,7 +200,6 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
     if parser.parse_args().historial:
         historial_imagenes_sinteticas=[]
     hist_perdida=[]
-    acc_sin_aum=[]
     acc_aum=[]
     max_acc=-0.1
     #guardar variables globales
@@ -239,9 +238,8 @@ else:#se va a reanudar un entrenatiento previo
      )
     #carguar las variables de ep_var
     hist_perdida=torch.load(ruta+"hist_perdida.pt")if os.path.exists(ruta+"hist_perdida.pt")else []
-    acc_sin_aum=torch.load(ruta+"acc_sin_aum.pt")if os.path.exists(ruta+"acc_sin_aum.pt")else []
-    max_acc=-0.1 if acc_sin_aum==[]else max(acc_sin_aum)
     acc_aum=torch.load(ruta+"acc_aum.pt")if os.path.exists(ruta+"acc_aum.pt")else []
+    max_acc=-0.1 if acc_aum==[]else max(acc_aum)
     image_syn=torch.load(ruta+"image_syn.pt")
     optimizer_img=torch.load(ruta+"optimizer_img.pt")
     if type(image_syn)==list:
@@ -288,22 +286,7 @@ for iteracion in ciclo:
         historial_imagenes_sinteticas.append(copy.deepcopy(image_syn).to("cpu"))
         torch.save(historial_imagenes_sinteticas,ruta+"hist_img.pt")        
     #validar red
-    #sin aumento:
-    #reinicar red
-    net,optimizador_red,criterion,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
-    _,accSinAum=train(
-        net,
-        optimizador_red,
-        criterion,
-        DataLoader(
-            TensorDataset(copy.deepcopy(image_syn).detach(),label_syn),
-            batch_size=hiperparametros["batch_size"],
-            shuffle=True,num_workers=0
-        ),
-        test_loader=val_loader,#se usarán los datos de validación cómo si fueran los de testeo en este caso
-        device=device
-    )
-    #con aumento de datos
+    #aplicar aumento
     entr_val,etq_val=aumento(
         parser.parse_args().tecAumento,
         parser.parse_args().factAumento,
@@ -326,15 +309,14 @@ for iteracion in ciclo:
     #reiniciar pesos de la red para la siguiente iteración
     net,optimizador_red,criterion,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
     #disminuir la tasa de aprendizaje si después de 100 iteraciones la función de pérdida no ha disminuido
-    planificador.step(accSinAum)
+    planificador.step(accAum)
     #guardar registros necesarios
-    if accSinAum>max_acc:
+    if accAum>max_acc:
         #guardar las mejores firmas en un archivo aparte
         torch.save(image_syn,f"{ruta}Mejor.pt")
-        max_acc=accSinAum
-    acc_sin_aum.append(accSinAum)
+        max_acc=accAum
     acc_aum.append(accAum)
     hist_perdida.append(perdida.item())
-    for variable,archivo in zip((hist_perdida,acc_sin_aum,acc_aum,image_syn,optimizer_img),ep_var):
+    for variable,archivo in zip((hist_perdida,acc_aum,image_syn,optimizer_img),ep_var):
         torch.save(variable,ruta+archivo+".pt")
-    ciclo.set_postfix(pérdida=hist_perdida[-1],accAum=accAum,accSinAum=accSinAum)
+    tqdm.write(f"iteración {iteracion} pérdida destilado {hist_perdida[-1]} acc:{accAum}")

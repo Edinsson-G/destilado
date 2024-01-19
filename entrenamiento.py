@@ -128,11 +128,11 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
         net.train()
         for e in ciclo:
             perdida=AverageMeter()
+            ciclo.set_description(f"Entrenamiento [{e}/{epoch}]")
             for data,target in data_loader:
                 optimizer,net,loss,criterion,_=retropropagacion(data,target,device,optimizer,net,criterion)
                 perdida.update(loss.item(),data.size(0))
-            ciclo.set_description(f"Entrenamiento [{e}/{epoch}]")
-            #ciclo.set_postfix(**{"pérdida":perdida.avg})
+                ciclo.set_postfix(**{"pérdida":perdida.avg})
         retornar=(net,)
     else:
         acc_ent_hist=[]
