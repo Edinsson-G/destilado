@@ -18,37 +18,51 @@ parser.add_argument(
     type=str,
     choices=["nn","hamida","chen","li","hu"],
     default="nn",
-    help="Nombre del modelo de red neuronal a utilizar en el destilado, es obligatorio si se quiere iniciar un nuevo destilado."
+    help="Nombre del modelo de red neuronal a utilizar en el destilado"
 )
-parser.add_argument("--conjunto",
-                    type=str,
-                    choices=["PaviaC","PaviaU","IndianPines","KSC","Botswana"],
-                    default="IndianPines",
-                    help="Nombre del conjunto de datos a destilar, obligatorio si se va a realizar un destilado nuevo.")
-parser.add_argument("--dispositivo",
-                    type=int,
-                    default=-1,
-                    help="Indice del dispositivo en el que se ejecutará el algoritmo, si es negativo se ejecutará en la CPU.")
+parser.add_argument(
+    "--conjunto",
+    type=str,
+    choices=["PaviaC","PaviaU","IndianPines","KSC","Botswana"],
+    default="IndianPines",
+    help="Nombre del conjunto de datos a destilar"
+)
+parser.add_argument(
+    "--dispositivo",
+    type=int,
+    default=-1,
+    help="Índice del dispositivo de procesamiento en el que se ejecutará el algoritmo, si es negativo se ejecutará en la CPU."
+)
 parser.add_argument("--semilla",type=int,help="Semilla pseudoaleatorio a usar.",default=0)
-parser.add_argument("--historial",
-                    type=bool,
-                    default=True,
-                    help="Si es verdadero se almacenará el historial de cambios de las firmas destiladas a lo largo de las iteraciones.")
-parser.add_argument("--carpetaAnterior",
-                    type=str,
-                    help="Para reanudar un destilado anterior, debe especificar el nombre de la carpeta que contiene los registros de dicho destilado.")
-parser.add_argument("--ipc",
-                    type=int,
-                    default=10,
-                    help="Imagenes por clase, obligatorio para iniciar un destilado nuevo")
-parser.add_argument("--lrImg",
-                    type=float,
-                    default=0.001,
-                    help="Tasa de aprendizaje del algoritmo de destilamiento, requerido solo en caso de iniciar un nuevo destilado.")
-parser.add_argument("--iteraciones",
-                    type=int,
-                    help="Cantidad total de iteraciones a realizar.",
-                    default=1000)
+parser.add_argument(
+    "--historial",
+    type=bool,
+    default=True,
+    help="Si es verdadero se almacenará el historial de cambios de las firmas destiladas a lo largo de todas las iteraciones en el archivo image_syn.pt."
+)
+parser.add_argument(
+    "--carpetaAnterior",
+    type=str,
+    help="Para reanudar un destilado anterior, debe especificar el nombre de la carpeta que contiene los registros de dicho destilado."
+)
+parser.add_argument(
+    "--ipc",
+    type=int,
+    default=10,
+    help="Imagenes por clase, obligatorio para iniciar un destilado nuevo"
+)
+parser.add_argument(
+    "--lrImg",
+    type=float,
+    default=0.001,
+    help="Tasa de aprendizaje del algoritmo de destilamiento, requerido solo en caso de iniciar un nuevo destilado."
+)
+parser.add_argument(
+    "--iteraciones",
+    type=int,
+    help="Cantidad total de iteraciones a realizar.",
+    default=1000
+)
 parser.add_argument(
     "--factAumento",
     type=int,
@@ -224,8 +238,6 @@ else:#se va a reanudar un entrenatiento previo
     #obtener modelos, optimizadores y datos
     del global_var[0]#no es necesario cargar test_loader
     ruta_anterior=carpeta+'/'+carpetaAnterior+'/'
-    #restablecer el estado del generador de números pseudoaleatorios
-    torch.set_rng_state(torch.load(ruta_anterior+"tensorSemilla.pt"))
     #carguar las variables de global_var y ol_var
     (val_loader,
      images_all,
@@ -236,6 +248,11 @@ else:#se va a reanudar un entrenatiento previo
      train_loader)=tuple(
          torch.load(ruta+archivo+".pt",map_location=device)for archivo in global_var
      )
+    #modelo y optimizadores
+    primer_red,optimizador_red,criterion,_= get_model(hiperparametros["model"],
+                                               hiperparametros["device"],**hiperparametros)
+    #restablecer el estado del generador de números pseudoaleatorios
+    torch.set_rng_state(torch.load(ruta_anterior+"tensorSemilla.pt"))
     #carguar las variables de ep_var
     hist_perdida=torch.load(ruta+"hist_perdida.pt")if os.path.exists(ruta+"hist_perdida.pt")else []
     acc_aum=torch.load(ruta+"acc_aum.pt")if os.path.exists(ruta+"acc_aum.pt")else []
@@ -246,12 +263,8 @@ else:#se va a reanudar un entrenatiento previo
         #en el entrenamiento anterior el argumento --model fue True, image_syn es realemente el último elemento de ese historial
         historial_imagenes_sinteticas=copy.deepcopy(image_syn)
         image_syn=image_syn[-1]
-    #modelo y optimizadores
-    net,optimizador_red,criterion,_= get_model(hiperparametros["model"],
-                                               hiperparametros["device"],**hiperparametros)
     num_classes=hiperparametros["n_classes"]-1
     ipc=int(len(label_syn)/hiperparametros["n_classes"])
-    #channel=image_syn.shape[1]
 print("Los resultados se guardarán en ",ruta)
 #optimizer_img for synthetic data
 planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"max",patience=100,verbose=True)
