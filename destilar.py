@@ -1,25 +1,25 @@
 import os
 import torch
-from torchinfo import summary
 import copy
 from models import get_model
-from perdida import *
-from datos import *
+from utiles import *
 import argparse
 import numpy as np
-from datasets import HyperX
+from datasets import HyperX,get_dataset
 from torch.utils.data import DataLoader,TensorDataset
-from utils import embebido
 import warnings
 from tqdm import tqdm
 from entrenamiento import train
+from torchinfo import summary
 #configurar argumentos
 parser=argparse.ArgumentParser(description="Destilar imagenes hiperespectrales")
-parser.add_argument("--modelo",
-                    type=str,
-                    choices=["nn","hamida","lee","chen","li"],
-                    default="nn",
-                    help="Nombre del modelo de red neuronal a utilizar en el destilado, es obligatorio si se quiere iniciar un nuevo destilado.")
+parser.add_argument(
+    "--modelo",
+    type=str,
+    choices=["nn","hamida","chen","li","hu"],
+    default="nn",
+    help="Nombre del modelo de red neuronal a utilizar en el destilado, es obligatorio si se quiere iniciar un nuevo destilado."
+)
 parser.add_argument("--conjunto",
                     type=str,
                     choices=["PaviaC","PaviaU","IndianPines","KSC","Botswana"],
@@ -98,8 +98,7 @@ global_var=["test_loader","val_loader","images_all","labels_all","label_syn","in
 #variables que se guardarán al finalizar cada iteración
 ep_var=["hist_perdida","acc_aum","image_syn","optimizer_img"]
 #definir carpetas anteriores y destino
-#destino=f"ritmo+de+aprendizaje+{parser.parse_args().lrImg}+aumento+{parser.parse_args().tecAumento}+ol+{parser.parse_args().cicloExterno}+innLoop+{parser.parse_args().cicloInterno}"if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
-destino=f"ol_{parser.parse_args().cicloExterno}_il_{parser.parse_args().cicloInterno}_{parser.parse_args().inicializacion}" if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
+destino=f"{parser.parse_args().modelo}_{parser.parse_args().inicializacion}" if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
 carpetaAnterior=parser.parse_args().carpetaAnterior
 if carpetaAnterior==None and parser.parse_args().reanudar and destino in os.listdir(carpeta):
     carpetaAnterior=destino
@@ -122,33 +121,34 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
     #carguar imagenes
     img,gt,_,IGNORED_LABELS,_,_= get_dataset(parser.parse_args().conjunto,"Datasets/")
     gt=np.array(gt,dtype=np.int32)
-    hiperparametros={'dataset':parser.parse_args().conjunto,
-                'model':parser.parse_args().modelo,
-                'folder':'./Datasets/',
-                'cuda':parser.parse_args().dispositivo,
-                'runs': 1,
-                'training_sample': 0.8,
-                'sampling_mode': 'random',
-                'class_balancing': False,
-                'test_stride': 1,
-                'flip_augmentation': False,
-                'radiation_augmentation': False,
-                'mixture_augmentation': False,
-                'with_exploration': False,
-                'n_classes':np.unique(gt).size,
-                'n_bands':img.shape[-1],
-                'ignored_labels':IGNORED_LABELS,
-                'device': device}
+    hiperparametros={
+        'dataset':parser.parse_args().conjunto,
+        'model':parser.parse_args().modelo,
+        'folder':'./Datasets/',
+        'cuda':parser.parse_args().dispositivo,
+        'runs': 1,
+        'training_sample': 0.8,
+        'sampling_mode': 'random',
+        'class_balancing': False,
+        'test_stride': 1,
+        'flip_augmentation': False,
+        'radiation_augmentation': False,
+        'mixture_augmentation': False,
+        'with_exploration': False,
+        'n_classes':np.unique(gt).size,
+        'n_bands':img.shape[-1],
+        'ignored_labels':IGNORED_LABELS,
+        'device': device
+    }
     #redefinir las etiquetas entre 0 y num_clases puesto que se ignorará la etiqueta 0
     if 0 in hiperparametros["ignored_labels"]:
       gt=gt-1
       hiperparametros["ignored_labels"]=(
           torch.tensor(hiperparametros["ignored_labels"])-1
           ).tolist()
-    net,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],
-                                                             hiperparametros["device"],
-                                                             **hiperparametros)
-    summary(net)
+    primer_red,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
+    #se guarda una copia de esa red para utilizar una misma inicializacion de pesos en validación
+    summary(primer_red)
     train_gt,test_gt=sample_gt(gt,
                                hiperparametros["training_sample"],
                                mode=hiperparametros["sampling_mode"])
@@ -160,7 +160,7 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
     dst_val=HyperX(img, val_gt, **hiperparametros)
     val_loader= DataLoader(dst_val,batch_size=len(dst_val),shuffle=True)
     del test_gt,val_gt,train_gt,dst_val,dst_test
-    channel=img.shape[-1]
+    #channel=img.shape[-1]
     clases=np.unique(gt)
     num_classes=clases.size
     for etiqueta_ingnorada in hiperparametros["ignored_labels"]:
@@ -251,14 +251,23 @@ else:#se va a reanudar un entrenatiento previo
                                                hiperparametros["device"],**hiperparametros)
     num_classes=hiperparametros["n_classes"]-1
     ipc=int(len(label_syn)/hiperparametros["n_classes"])
-    channel=image_syn.shape[1]
+    #channel=image_syn.shape[1]
 print("Los resultados se guardarán en ",ruta)
 #optimizer_img for synthetic data
 planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"max",patience=100,verbose=True)
 ciclo=tqdm(range(len(hist_perdida),parser.parse_args().iteraciones+1))
+#definir la funcion que generará muestras nuevas para el aumento de datos
+if parser.parse_args().tecAumento!="None":
+    aumentador={
+            "ruido":lambda tensor:tensor+(torch.rand(tensor.shape)/4+0.85),
+            "escalamiento":lambda tensor:tensor*(torch.rand(1).item()/4+0.85),
+            "potencia":lambda tensor:torch.pow(tensor,torch.ran(1).item()/4+0.85)
+        }[parser.parse_args().tecAumento]
 for iteracion in ciclo:
     ciclo.set_description_str(f"Iteración {iteracion}/{parser.parse_args().iteraciones}")
     #actualizar imágenes sintéticas
+    #reiniciar pesos
+    net,_,_,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
     net.train()
     perdida=torch.tensor(0.0).to(device)
     for parametros in list(net.parameters()):
@@ -269,8 +278,8 @@ for iteracion in ciclo:
         img_sin=image_syn[clase*ipc:(clase+1)*ipc]
         #aplicar aumento
         if parser.parse_args().tecAumento!="None":
-            img_real=aumento(parser.parse_args().tecAumento,parser.parse_args().factAumento,img_real)
-            img_sin=aumento(parser.parse_args().tecAumento,parser.parse_args().factAumento,img_sin)
+            img_real=aumento(aumentador,parser.parse_args().factAumento,img_real)
+            img_sin=aumento(aumentador,parser.parse_args().factAumento,img_sin)
         #aplicar embebido
         salida_real=embebido(net,img_real).detach()
         output_sin=embebido(net,img_sin)
@@ -288,16 +297,15 @@ for iteracion in ciclo:
     #validar red
     #aplicar aumento
     entr_val,etq_val=aumento(
-        parser.parse_args().tecAumento,
+        aumentador,
         parser.parse_args().factAumento,
         copy.deepcopy(image_syn).detach(),
         label_syn
-    )
-    net,optimizador_red,criterion,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
+    )if parser.parse_args().tecAumento!="None"else(copy.deepcopy(image_syn).detach(),label_syn)
     _,accAum=train(
-        net,
-        optimizador_red,
-        criterion,
+        copy.deepcopy(primer_red),
+        copy.deepcopy(optimizador_red),
+        copy.deepcopy(criterion),
         DataLoader(
             TensorDataset(entr_val,etq_val),
             batch_size=hiperparametros["batch_size"],
@@ -306,8 +314,6 @@ for iteracion in ciclo:
         test_loader=val_loader,#se usarán los datos de validación cómo si fueran los de testeo en este caso
         device=device
     )
-    #reiniciar pesos de la red para la siguiente iteración
-    net,optimizador_red,criterion,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
     #disminuir la tasa de aprendizaje si después de 100 iteraciones la función de pérdida no ha disminuido
     planificador.step(accAum)
     #guardar registros necesarios

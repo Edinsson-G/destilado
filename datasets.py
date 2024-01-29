@@ -3,7 +3,6 @@
 This file contains the PyTorch dataset for hyperspectral images and
 related helpers.
 """
-import spectral
 import numpy as np
 import torch
 import torch.utils
@@ -18,7 +17,7 @@ except ImportError:
     # Python 2
     from urllib import urlretrieve
 
-from utils import open_file
+from utiles import open_file
 
 DATASETS_CONFIG = {
     "PaviaC": {

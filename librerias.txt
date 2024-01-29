@@ -1,0 +1,3 @@
+pytorch-lts::pytorch
+conda-forge::torchinfo
+#joblib

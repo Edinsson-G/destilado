@@ -1,5 +1,4 @@
-from utils import open_file
-import numpy as np
+from utiles import open_file
 
 CUSTOM_DATASETS_CONFIG = {
     "DFC2018_HSI": {
