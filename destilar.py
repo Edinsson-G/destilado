@@ -163,6 +163,8 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
     primer_red,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
     #se guarda una copia de esa red para utilizar una misma inicializacion de pesos en validación
     summary(primer_red)
+    #pesos originales
+    orig_pesos=copy.deepcopy(primer_red.state_dict())
     train_gt,test_gt=sample_gt(gt,
                                hiperparametros["training_sample"],
                                mode=hiperparametros["sampling_mode"])
@@ -280,7 +282,7 @@ for iteracion in ciclo:
     ciclo.set_description_str(f"Iteración {iteracion}/{parser.parse_args().iteraciones}")
     #actualizar imágenes sintéticas
     #reiniciar pesos
-    net,_,_,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
+    net,optimizador_red,criterion,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
     net.train()
     perdida=torch.tensor(0.0).to(device)
     for parametros in list(net.parameters()):
@@ -315,10 +317,14 @@ for iteracion in ciclo:
         copy.deepcopy(image_syn).detach(),
         label_syn
     )if parser.parse_args().tecAumento!="None"else(copy.deepcopy(image_syn).detach(),label_syn)
+    primer_red.eval()
+    #restablecer los pesos a los primeros generados
+    primer_red.load_state_dict(orig_pesos)
+    primer_red.train()
     _,accAum=train(
-        copy.deepcopy(primer_red),
-        copy.deepcopy(optimizador_red),
-        copy.deepcopy(criterion),
+        primer_red,
+        optimizador_red,
+        criterion,
         DataLoader(
             TensorDataset(entr_val,etq_val),
             batch_size=hiperparametros["batch_size"],
@@ -332,7 +338,7 @@ for iteracion in ciclo:
     #guardar registros necesarios
     if accAum>max_acc:
         #guardar las mejores firmas en un archivo aparte
-        torch.save(image_syn,f"{ruta}Mejor.pt")
+        torch.save(image_syn.detach(),f"{ruta}Mejor.pt")
         max_acc=accAum
     acc_aum.append(accAum)
     hist_perdida.append(perdida.item())
