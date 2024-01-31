@@ -282,7 +282,7 @@ for iteracion in ciclo:
     ciclo.set_description_str(f"Iteración {iteracion}/{parser.parse_args().iteraciones}")
     #actualizar imágenes sintéticas
     #reiniciar pesos
-    net,optimizador_red,criterion,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
+    net,_,_,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
     net.train()
     perdida=torch.tensor(0.0).to(device)
     for parametros in list(net.parameters()):
@@ -321,6 +321,7 @@ for iteracion in ciclo:
     #restablecer los pesos a los primeros generados
     primer_red.load_state_dict(orig_pesos)
     primer_red.train()
+    optimizador_red.zero_grad()
     _,accAum=train(
         primer_red,
         optimizador_red,
