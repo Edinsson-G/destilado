@@ -23,7 +23,7 @@ parser.add_argument(
 parser.add_argument(
     "--conjunto",
     type=str,
-    choices=["PaviaC","PaviaU","IndianPines","KSC","Botswana"],
+    choices=["PaviaC","PaviaU","IndianPines","Botswana"],
     default="IndianPines",
     help="Nombre del conjunto de datos a destilar"
 )

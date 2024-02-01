@@ -44,14 +44,6 @@ DATASETS_CONFIG = {
         "img": "PaviaU.mat",
         "gt": "PaviaU_gt.mat",
     },
-    "KSC": {
-        "urls": [
-            "http://www.ehu.es/ccwintco/uploads/2/26/KSC.mat",
-            "http://www.ehu.es/ccwintco/uploads/a/a6/KSC_gt.mat",
-        ],
-        "img": "KSC.mat",
-        "gt": "KSC_gt.mat",
-    },
     "IndianPines": {
         "urls": [
             "http://www.ehu.eus/ccwintco/uploads/6/67/Indian_pines_corrected.mat",
@@ -262,32 +254,6 @@ def get_dataset(dataset_name, target_folder="./", datasets=DATASETS_CONFIG):
             "Short mopane",
             "Mixed mopane",
             "Exposed soils",
-        ]
-
-        ignored_labels = [0]
-
-    elif dataset_name == "KSC":
-        # Load the image
-        img = open_file(folder + "KSC.mat")["KSC"]
-
-        rgb_bands = (43, 21, 11)  # AVIRIS sensor
-
-        gt = open_file(folder + "KSC_gt.mat")["KSC_gt"]
-        label_values = [
-            "Undefined",
-            "Scrub",
-            "Willow swamp",
-            "Cabbage palm hammock",
-            "Cabbage palm/oak hammock",
-            "Slash pine",
-            "Oak/broadleaf hammock",
-            "Hardwood swamp",
-            "Graminoid marsh",
-            "Spartina marsh",
-            "Cattail marsh",
-            "Salt marsh",
-            "Mud flats",
-            "Wate",
         ]
 
         ignored_labels = [0]
