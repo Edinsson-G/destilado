@@ -160,6 +160,13 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
       hiperparametros["ignored_labels"]=(
           torch.tensor(hiperparametros["ignored_labels"])-1
           ).tolist()
+    clases=np.unique(gt)
+    num_classes=clases.size
+    for etiqueta_ingnorada in hiperparametros["ignored_labels"]:
+        if etiqueta_ingnorada in clases:
+            num_classes=num_classes-1
+    del clases
+    hiperparametros["n_classes"]=num_classes
     primer_red,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
     #se guarda una copia de esa red para utilizar una misma inicializacion de pesos en validación
     summary(primer_red)
@@ -177,13 +184,6 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
     val_loader= DataLoader(dst_val,batch_size=len(dst_val),shuffle=True)
     del test_gt,val_gt,train_gt,dst_val,dst_test
     #channel=img.shape[-1]
-    clases=np.unique(gt)
-    num_classes=clases.size
-    for etiqueta_ingnorada in hiperparametros["ignored_labels"]:
-        if etiqueta_ingnorada in clases:
-            num_classes=num_classes-1
-    del img,gt,clases
-    #hiperparametros["n_classes"]=num_classes
     #preprocesar datos reales
     images_all = []
     labels_all = []
@@ -234,7 +234,7 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
     ):
         torch.save(variable,ruta+archivo+".pt")
     #durante el destilado no se utilizará esta variable
-    del test_loader
+    del test_loader,img,gt
 else:#se va a reanudar un entrenatiento previo
     print("Reanudando entrenamiento en",ruta)
     #obtener modelos, optimizadores y datos
@@ -266,6 +266,7 @@ else:#se va a reanudar un entrenatiento previo
         historial_imagenes_sinteticas=copy.deepcopy(image_syn)
         image_syn=image_syn[-1]
     num_classes=hiperparametros["n_classes"]-1
+    hiperparametros["n_classes"]=hiperparametros["n_classes"]-1
     ipc=int(len(label_syn)/hiperparametros["n_classes"])
 print("Los resultados se guardarán en ",ruta)
 #optimizer_img for synthetic data
