@@ -9,7 +9,7 @@ import torch.utils
 import torch.utils.data
 import os
 from tqdm import tqdm
-
+import secrets
 try:
     # Python 3
     from urllib.request import urlretrieve
@@ -43,6 +43,14 @@ DATASETS_CONFIG = {
         ],
         "img": "PaviaU.mat",
         "gt": "PaviaU_gt.mat",
+    },
+    "KSC": {
+        "urls": [
+            "http://www.ehu.es/ccwintco/uploads/2/26/KSC.mat",
+            "http://www.ehu.es/ccwintco/uploads/a/a6/KSC_gt.mat",
+        ],
+        "img": "KSC.mat",
+        "gt": "KSC_gt.mat",
     },
     "IndianPines": {
         "urls": [
@@ -257,6 +265,32 @@ def get_dataset(dataset_name, target_folder="./", datasets=DATASETS_CONFIG):
         ]
 
         ignored_labels = [0]
+
+    elif dataset_name == "KSC":
+        # Load the image
+        img = open_file(folder + "KSC.mat")["KSC"]
+
+        rgb_bands = (43, 21, 11)  # AVIRIS sensor
+
+        gt = open_file(folder + "KSC_gt.mat")["KSC_gt"]
+        label_values = [
+            "Undefined",
+            "Scrub",
+            "Willow swamp",
+            "Cabbage palm hammock",
+            "Cabbage palm/oak hammock",
+            "Slash pine",
+            "Oak/broadleaf hammock",
+            "Hardwood swamp",
+            "Graminoid marsh",
+            "Spartina marsh",
+            "Cattail marsh",
+            "Salt marsh",
+            "Mud flats",
+            "Wate",
+        ]
+
+        ignored_labels = [0]
     else:
         # Custom dataset
         (
@@ -398,3 +432,14 @@ class HyperX(torch.utils.data.Dataset):
             # Make 4D data ((Batch x) Planes x Channels x Width x Height)
             data = data.unsqueeze(0)
         return data, label
+#funcion para extraer un conjunto coreset
+def coreset(images_all,indices_class,etq,ipc=None,etq_cor=None):
+    if etq_cor==None:
+        etq_cor=torch.repeat_interleave(torch.arange(n_clases),ipc,device=etq.device)
+    n_clases=len(torch.unique(etq))
+    tam=list(images_all.shape)
+    tam[0]=len(etq_cor)
+    img_cor=torch.empty(tam,device=images_all.device)
+    for i,clase in enumerate(etq_cor):
+        img_cor[i]=images_all[secrets.choice(indices_class[clase])]
+    return img_cor,etq_cor
