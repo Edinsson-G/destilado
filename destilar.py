@@ -110,7 +110,7 @@ if carpeta not in os.listdir('.'):
 #variables a guardar en disco
 global_var=["test_loader","val_loader","images_all","labels_all","label_syn","indices_class","hiperparametros","train_loader"]
 #variables que se guardarán al finalizar cada iteración
-ep_var=["hist_perdida","acc_aum","image_syn","optimizer_img"]
+ep_var=["hist_perdida","acc","image_syn","optimizer_img"]
 #definir carpetas anteriores y destino
 destino=f"{parser.parse_args().modelo}_{parser.parse_args().inicializacion}" if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
 carpetaAnterior=parser.parse_args().carpetaAnterior
@@ -216,7 +216,7 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
     if parser.parse_args().historial:
         historial_imagenes_sinteticas=[]
     hist_perdida=[]
-    acc_aum=[]
+    acc_list=[]
     max_acc=-0.1
     #guardar variables globales
     for variable,archivo in zip(
@@ -257,8 +257,8 @@ else:#se va a reanudar un entrenatiento previo
     torch.set_rng_state(torch.load(ruta_anterior+"tensorSemilla.pt"))
     #carguar las variables de ep_var
     hist_perdida=torch.load(ruta+"hist_perdida.pt")if os.path.exists(ruta+"hist_perdida.pt")else []
-    acc_aum=torch.load(ruta+"acc_aum.pt")if os.path.exists(ruta+"acc_aum.pt")else []
-    max_acc=-0.1 if acc_aum==[]else max(acc_aum)
+    acc_list=torch.load(ruta+"acc_aum.pt")if os.path.exists(ruta+"acc_aum.pt")else []
+    max_acc=-0.1 if acc_list==[]else max(acc_list)
     image_syn=torch.load(ruta+"image_syn.pt")
     optimizer_img=torch.load(ruta+"optimizer_img.pt")
     if type(image_syn)==list:
@@ -311,24 +311,19 @@ for iteracion in ciclo:
         historial_imagenes_sinteticas.append(copy.deepcopy(image_syn).to("cpu"))
         torch.save(historial_imagenes_sinteticas,ruta+"hist_img.pt")        
     #validar red
-    #aplicar aumento
-    entr_val,etq_val=aumento(
-        aumentador,
-        parser.parse_args().factAumento,
-        copy.deepcopy(image_syn).detach(),
-        label_syn
-    )if parser.parse_args().tecAumento!="None"else(copy.deepcopy(image_syn).detach(),label_syn)
-    primer_red.eval()
     #restablecer los pesos a los primeros generados
     primer_red.load_state_dict(orig_pesos)
     primer_red.train()
     optimizador_red.zero_grad()
-    _,accAum=train(
+    _,acc=train(
         primer_red,
         optimizador_red,
         criterion,
         DataLoader(
-            TensorDataset(entr_val,etq_val),
+            TensorDataset(
+                copy.deepcopy(image_syn.detach()),
+                label_syn
+            ),
             batch_size=hiperparametros["batch_size"],
             shuffle=True,num_workers=0
         ),
@@ -336,14 +331,14 @@ for iteracion in ciclo:
         device=device
     )
     #disminuir la tasa de aprendizaje si después de 100 iteraciones la función de pérdida no ha disminuido
-    planificador.step(accAum)
+    planificador.step(acc)
     #guardar registros necesarios
-    if accAum>max_acc:
+    if acc>max_acc:
         #guardar las mejores firmas en un archivo aparte
         torch.save(image_syn.detach(),f"{ruta}Mejor.pt")
-        max_acc=accAum
-    acc_aum.append(accAum)
+        max_acc=acc
+    acc_list.append(acc)
     hist_perdida.append(perdida.item())
-    for variable,archivo in zip((hist_perdida,acc_aum,image_syn,optimizer_img),ep_var):
+    for variable,archivo in zip((hist_perdida,acc_list,image_syn,optimizer_img),ep_var):
         torch.save(variable,ruta+archivo+".pt")
-    tqdm.write(f"iteración {iteracion} pérdida destilado {hist_perdida[-1]} acc:{accAum}")
+    tqdm.write(f"iteración {iteracion} pérdida destilado {hist_perdida[-1]} acc:{acc}")

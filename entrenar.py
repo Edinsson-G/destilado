@@ -37,19 +37,6 @@ parser.add_argument(
     help="Carpeta en la que se guardarán los registros de este entrenamiento"
 )
 parser.add_argument("--epocas",type=int,default=100,help="Cantidad de epocas.")
-parser.add_argument(
-    "--tecAumento",
-    type=str,
-    choices=["ruido","escalamiento","ninguno"],
-    default="escalamiento",
-    help="Técnica que se utilizará para hacer aumento de datos. Ruido consiste en sumar ruido pseudoaleatorio uniformemente distribuido en el intervalo [-0.05,0.05] y escalamiento en multiplicar el ruido. Será ignorado este argumento si se entrena con los datos reales."
-)
-parser.add_argument(
-    "--replicas",
-    type=int,
-    default=20,
-    help="Cantidad de datos nuevos a generar a partir de cada dato de entrenamiento"
-)
 carpeta="resultados/"
 ruta_anterior=carpeta+parser.parse_args().carpetaAnterior+'/'
 carpetaDestino=parser.parse_args().carpetaAnterior if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
@@ -77,24 +64,10 @@ else:
             torch.load(ruta_anterior+"labels_all.pt",map_location=hiperparametros["device"]),
             etq_cor=torch.load(ruta_anterior+"label_syn.pt",map_location=hiperparametros["device"])
         )
-    #hacer aumento si aplica
-    if parser.parse_args().tecAumento!="ninguno":
-        img,etq=aumento(
-            {
-                "ruido":lambda tensor:tensor+(torch.rand(tensor.shape)/4+0.85),
-                "escalamiento":lambda tensor:tensor*(torch.rand(1).item()/4+0.85),
-                "potencia":lambda tensor:torch.pow(tensor,torch.ran(1).item()/4+0.85)
-            }[parser.parse_args().tecAumento],
-            parser.parse_args().replicas,
-            img,
-            etq
-        )
     carguador=DataLoader(
         TensorDataset(img,etq),
         batch_size=hiperparametros["batch_size"],
-        shuffle=True,
-        #num_workers=0,
-        #generator=torch.Generator(device="cuda")
+        shuffle=True
     )
     del img,etq
 #carga del modelo y optimizadores
