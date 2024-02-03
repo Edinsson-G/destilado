@@ -1,6 +1,7 @@
 from ignite.metrics import Accuracy
 import torch
 from tqdm import tqdm
+import copy
 class AverageMeter(object):
     """Computes and stores the average and current value"""
 
@@ -45,7 +46,9 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
         acc_ent_hist=[]
         acc_val_hist=[]
         perdida=[]
+        maxcc=-1
         for e in ciclo:
+            net.train()
             train_loss = AverageMeter()
             train_acc = AverageMeter()
             test_loss = AverageMeter()
@@ -55,14 +58,14 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
             loss_iter=[]
             for data,target in data_loader:
                 optimizer,net,loss,criterion,output=retropropagacion(data,target,device,optimizer,net,criterion)
-                accuracy.update((output,target))
+                accuracy.update((output.to(device),target.to(device)))
                 correct = accuracy.compute()
                 acc_ent_iter.append(float(correct))
                 train_loss.update(loss.item(), data.size(0))
 
                 train_acc.update(correct, data.size(0))
                 
-            dict_metrics = dict(loss=train_loss.avg,acc=train_acc.avg)
+            dict_metrics = dict(loss=train_loss.avg)
 
 
             ciclo.set_description(f'Network Training [{e} / {epoch}]')
@@ -97,6 +100,13 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
                 data_loop_test.set_postfix(**dict_metrics)
 
                 accuracy.reset()
+            if correct>maxcc:
+                #guardar los mejores pesos hasta el momento
+                pesos=copy.deepcopy(net.state_dict())
+                maxcc=correct
+        #devolver los mejores pesos
+        net.eval()
+        net.load_state_dict(pesos)
         retornar=(net,perdida,acc_ent_hist,acc_val_hist)
     if test_loader!=None:
         #calcular accuracy de testeo
