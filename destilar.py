@@ -132,6 +132,7 @@ if carpetaAnterior==None:#si se va iniciar un destilado nuevo
     print("Iniciando nuevo destilado en",ruta)
     #obtener modelos, optimizadores y datos
     torch.manual_seed(parser.parse_args().semilla)
+    np.random.seed(parser.parse_args().semilla)
     #carguar imagenes
     img,gt,_,IGNORED_LABELS,_,_= get_dataset(parser.parse_args().conjunto,"Datasets/")
     gt=np.array(gt,dtype=np.int32)
