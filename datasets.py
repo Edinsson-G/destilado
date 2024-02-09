@@ -488,7 +488,7 @@ def datosYred(modelo,conjunto,dispositivo):
     dst_val=HyperX(img, val_gt, **hiperparametros)
     val_loader= DataLoader(dst_val,batch_size=len(dst_val),shuffle=True)
     return dst_train,test_loader,val_loader,red,optimizador_red,criterion,hiperparametros
-def vars_all(dst_train,n_clases,dispositivo):
+def vars_all(dst_train,n_clases):
     #preprocesar datos reales
     images_all = []
     labels_all = []

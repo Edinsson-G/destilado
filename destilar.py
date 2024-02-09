@@ -94,6 +94,12 @@ parser.add_argument(
     default=False,
     help="En caso que no se haya especificado una carpeta anterior verificar si la carpeta destino existe para reanudar el destilado que contiene."
 )
+parser.add_argument(
+    "--epocas",
+    type=int,
+    default=500,
+    help="cantidad de epocas en etapa de validación."
+)
 #torch.set_default_device(device)
 if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
     exit("Se especificó un factor de aumento de aumento pero no un método de aumento.")
@@ -128,6 +134,8 @@ summary(primer_red)
 #pesos originales
 orig_pesos=copy.deepcopy(primer_red.state_dict())
 images_all,labels_all,indices_class=vars_all(dst_train,hiperparametros["n_classes"])
+images_all=images_all.to(device)
+labels_all=labels_all.to(device)
 del dst_train
 for c in range(hiperparametros["n_classes"]):
     print('class c = %d: %d real images'%(c, len(indices_class[c]))) # Prints how many labels are for each class
@@ -168,7 +176,7 @@ ciclo=tqdm(range(len(hist_perdida),hiperDest["iteraciones"]+1))
 #definir la funcion que generará muestras nuevas para el aumento de datos
 if hiperDest["tecAumento"]!="None":
     aumentador={
-            "ruido":lambda tensor:tensor+(torch.rand(tensor.shape)/4+0.85),
+            "ruido":lambda tensor:tensor+torch.rand(1).item()/2.5-0.2,
             "escalamiento":lambda tensor:tensor*(torch.rand(1).item()/4+0.85),
             "potencia":lambda tensor:torch.pow(tensor,torch.ran(1).item()/4+0.85)
         }[hiperDest["tecAumento"]]
@@ -193,7 +201,7 @@ for iteracion in ciclo:
         salida_real=embebido(net,img_real).detach()
         output_sin=embebido(net,img_sin)
         #funcion de perdida
-        perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)+torch.sum((torch.std(salida_real,dim=0)-torch.std(output_sin,dim=0))**2)
+        perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)#+torch.sum((torch.std(salida_real,dim=0)-torch.std(output_sin,dim=0))**2)
     optimizer_img.zero_grad()
     perdida.backward()
     optimizer_img.step()
@@ -221,7 +229,8 @@ for iteracion in ciclo:
             shuffle=True,num_workers=0
         ),
         test_loader=val_loader,#se usarán los datos de validación cómo si fueran los de testeo en este caso
-        device=device
+        device=device,
+        epoch=parser.parse_args().epocas
     )
     #disminuir la tasa de aprendizaje si después de 100 iteraciones la función de pérdida no ha disminuido
     planificador.step(acc)

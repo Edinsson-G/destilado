@@ -3,10 +3,10 @@ import torch
 from entrenamiento import train
 from torch.utils.data import TensorDataset,DataLoader
 from models import get_model
-from datasets import coreset
+from datasets import coreset,datosYred,vars_all
 import warnings
-from datasets import datosYred
 import os
+import numpy as np
 parser=argparse.ArgumentParser(description="realizar entrenamientos para comprobar el funcionamiento del destilado.")
 parser.add_argument(
     "--carpetaAnterior",
@@ -48,11 +48,17 @@ parser.add_argument(
     type=int,
     help="indices por clase (para tipoDatos coreset solamente), también se puede especificar por medio de un archivo hiperDest.pt; pero si se especifica aquí tendrá prioridad."
 )
-parser.add_argument("--epocas",type=int,default=100,help="Cantidad de epocas, también se puede especificar por medio de un archivo hiperDest.pt; pero si se especifica aquí tendrá prioridad.")
+parser.add_argument("--epocas",type=int,default=100,help="Cantidad de epocas, también se puede especificar por medio de un archivo hiperDest.pt, el cual tendrá prioridad")
 parser.add_argument(
     "--guardar",
     type=bool,
+    default=True,
     help="decide si guardar o no registros en disco de este entrenamiento"
+)
+parser.add_argument(
+    "--conjunto",
+    type=str,
+    choices=["IndianPines","PaviaC","PaviaU","Botswana"]
 )
 #definir en que carpeta se almacenarán los registros de este entrenamiento
 carpeta="resultados/"
@@ -71,79 +77,67 @@ else:
     else:
         warnings.warn("Se especificó una carpeta de destino pero la opción guardar se especificó cómo falsa; por lo tanto no se guardará ningún registro.")
     destino=None
-if parser.parse_args().carpetaAnterior==None:
-    exit("se necesita especificar una carpeta para realizar este entrenamiento.")
-else:
-    ruta_anterior=carpeta+parser.parse_args().carpetaAnterior+'/'
-hiperDest=torch.load(ruta_anterior+"hiperDest.pt")if os.path.isfile(ruta_anterior+"hiperDest.pt")else None
+ruta_anterior=None if parser.parse_args().carpetaAnterior==None else carpeta+parser.parse_args().carpetaAnterior+'/'
+hiperDest=torch.load(ruta_anterior+"hiperDest.pt")if ruta_anterior!=None and os.path.isfile(ruta_anterior+"hiperDest.pt")else None
 dispositivo="cpu"if parser.parse_args().dispositivo<0 else f"cuda{parser.parse_args().dispositivo}"
-#definir nombre del modelo a entrenar
-if parser.parse_args().modelo==None:
-    if hiperDest==None:
-        exit("No se conoce el nombre del modelo a entrenar")
-    modelo=hiperDest["modelo"]
-else:
-    modelo=parser.parse_args().modelo
-#definir nombre del conjunto
-if parser.parse_args().conjunto==None:
-    if hiperDest==None:
-        exit("No se conoce el nombre del conjunto.")
-    conjunto=hiperDest["conjunto"]
-else:
-    conjunto=parser.parse_args().conjunto
 #carguar datos de entrenamiento, validación y prueba
-if parser.parse_args().tipoDatos=="destilados":
-    _,test_loader,val_loader,red,optimizador_red,criterion,hiperparametros=
-    img=torch.load(
-        ruta_anterior+"Mejor.pt",
-        map_location=dispositivo
-    )
-    etq=torch.repeat_interleave(torch.arange(hiperparametros["n_classes"]),ipc)
-    
-
-#cargar y actualizar hiperparametros (los cambios no se sobreescribiran en hiperparametros.pt)
-hiperDest
-print("Algoritmo ejecutándose en",hiperparametros["device"],"\n\n")
-#cargua de los datos de entrenamiento
+modelo=parser.parse_args().modelo if parser.parse_args().modelo!=None else hiperDest["modelo"]if hiperDest!=None else exit("No se conoce el nombre del modelo a entrenar")
+conjunto=parser.parse_args().conjunto if parser.parse_args().conjunto!=None else hiperDest["conjunto"] if hiperDest!=None else exit("No se conoce el nombre del conjunto.")
+if hiperDest!=None:
+    torch.manual_seed(hiperDest["semilla"])
+    np.random.seed(hiperDest["semilla"])
+dst_train,test_loader,val_loader,_,_,_,hiperparametros=datosYred(
+modelo,conjunto,parser.parse_args().dispositivo)
 if parser.parse_args().tipoDatos=="reales":
-    carguador=torch.load(ruta_anterior+"train_loader.pt",map_location=hiperparametros["device"])
-else:
-    if parser.parse_args().tipoDatos=="destilados":
-        img=torch.load(
-            ruta_anterior+"Mejor.pt",map_location=hiperparametros["device"]
-        )
-        etq=torch.load(
-            ruta_anterior+"label_syn.pt",map_location=hiperparametros["device"]
-        )
-    else:#coreset
-        img,etq=coreset(
-            torch.load(ruta_anterior+"images_all.pt",map_location=hiperparametros["device"]),
-            torch.load(ruta_anterior+"indices_class.pt",map_location=hiperparametros["device"]),
-            torch.load(ruta_anterior+"labels_all.pt",map_location=hiperparametros["device"]),
-            etq_cor=torch.load(ruta_anterior+"label_syn.pt",map_location=hiperparametros["device"])
-        )
     carguador=DataLoader(
-        TensorDataset(img,etq),
+        dst_train,
         batch_size=hiperparametros["batch_size"],
         shuffle=True
     )
-    del img,etq
-#carga del modelo y optimizadores
-#hiperparametros["n_classes"]=hiperparametros["n_classes"]+1
-red,optimizador,criteiron,_=get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
+else:
+    etq=torch.repeat_interleave(
+        torch.arange(hiperparametros["n_classes"]),
+        parser.parse_args().ipc if parser.parse_args().ipc!=None else hiperDest["ipc"]if hiperDest!=None else exit("No se conoce el ipc.")
+    )
+    if parser.parse_args().tipoDatos=="destilados":
+        #_,test_loader,val_loader,red,optimizador_red,criterion,hiperparametros=
+        if ruta_anterior==None:
+            exit("Para entrenar datos destilados debe especificarla carpeta en la que se encuentran alojados (archivo Mejor.pt).")
+        if not os.path.isfile(ruta_anterior+"Mejor.pt"):
+            exit("no se encuentran los datos destilados (Mejor.pt) en "+ruta_anterior)
+        del dst_train
+        img=torch.load(
+            ruta_anterior+"Mejor.pt",
+            map_location=dispositivo
+        )
+    else:#coreset
+        images_all,_,indices_class=vars_all(dst_train,hiperparametros["n_classes"])
+        img=coreset(images_all,indices_class,etq)
+    carguador=DataLoader(
+            TensorDataset(img,etq),
+            batch_size=hiperparametros["batch_size"],
+            shuffle=True
+        )
+print("Algoritmo ejecutándose en",dispositivo,"\n\n")
 print("Iniciando entrenamiento con datos",parser.parse_args().tipoDatos)
+#obtener red con los pesos definidos por la semilla especificada
+torch.manual_seed(parser.parse_args().semilla)
+red,optimizador,criterion,_=get_model(modelo,hiperparametros["cuda"],**hiperparametros)
+del modelo,conjunto
 red,perdida,accEnt,accVal,accTest=train(
     red,
     optimizador,
-    criteiron,
+    criterion,
     carguador,
-    parser.parse_args().epocas,
-    torch.load(ruta_anterior+"test_loader.pt",map_location=hiperparametros["device"]),
-    torch.load(ruta_anterior+"val_loader.pt",map_location=hiperparametros["device"]),
-    hiperparametros["device"])
-for variable,archivo in zip([red,perdida,accEnt,accVal],
-                            ["redEntrenada","perdida","accTrain","accVal"]):
-    torch.save(variable,carpeta+carpetaDestino+f"/{archivo}Datos{parser.parse_args().tipoDatos}.pt")
-#guardar accuracy de testeo
-with open(carpeta+carpetaDestino+"/accTestDatosdestilados.txt", "w") as txtfile:
-    print("Accuracy de testeo para datos destilados: {}".format(accTest), file=txtfile)
+    hiperDest["epocas"]if hiperDest!=None else parser.parse_args().epocas,
+    test_loader,
+    val_loader,
+    hiperparametros["cuda"]
+)
+if destino!=None:
+    for variable,archivo in zip([red.state_dict(),perdida,accEnt,accVal],
+                                ["pesos","perdida","accTrain","accVal"]):
+        torch.save(variable,destino+f"/{archivo}Datos{parser.parse_args().tipoDatos}.pt")
+    #guardar accuracy de testeo
+    with open(carpeta+destino+"/accTestDatosdestilados.txt", "w") as txtfile:
+        print("Accuracy de testeo para datos destilados: {}".format(accTest), file=txtfile)
