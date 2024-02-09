@@ -5,7 +5,7 @@ from models import get_model
 from utiles import *
 import argparse
 import numpy as np
-from datasets import HyperX,get_dataset
+from datasets import datosYred,vars_all,coreset
 from torch.utils.data import DataLoader,TensorDataset
 import warnings
 from tqdm import tqdm
@@ -37,7 +37,7 @@ parser.add_argument("--semilla",type=int,help="Semilla pseudoaleatorio a usar.",
 parser.add_argument(
     "--historial",
     type=bool,
-    default=True,
+    default=False,
     help="Si es verdadero se almacenará el historial de cambios de las firmas destiladas a lo largo de todas las iteraciones en el archivo image_syn.pt."
 )
 parser.add_argument(
@@ -79,7 +79,7 @@ parser.add_argument(
 parser.add_argument(
     "--inicializacion",
     type=str,
-    choices=["muestreo","aleatoriedad"],
+    choices=["coreset","aleatora"],
     help="Inicialización de las imágenes destiladas, muestreo significa seleccionar aleatoriamente muestras del conjunto de entrenamiento original y aleatoriedad significa inicializarlas siguiendo una distribución uniforme con números entre 0 y 1.",
     default="muestreo"
 )
@@ -94,7 +94,6 @@ parser.add_argument(
     default=False,
     help="En caso que no se haya especificado una carpeta anterior verificar si la carpeta destino existe para reanudar el destilado que contiene."
 )
-device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
 #torch.set_default_device(device)
 if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
     exit("Se especificó un factor de aumento de aumento pero no un método de aumento.")
@@ -102,15 +101,12 @@ elif parser.parse_args().factAumento<0:
     exit("El factor de aumento no debe ser negativo.")
 elif (parser.parse_args().tecAumento=="ruido") and (parser.parse_args().factAumento==0):
     warnings.warn("Se especificó la técnica de aumento de ruido; sin embargo el factor de aumento es 0, por lo que no se realizará ningún aumento.")
+device=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
 print("Algoritmo ejecutandose en",device)
 #crear carpeta en la que se guardarán los resultados
 carpeta="resultados"
 if carpeta not in os.listdir('.'):
     os.mkdir(carpeta)
-#variables a guardar en disco
-global_var=["test_loader","val_loader","images_all","labels_all","label_syn","indices_class","hiperparametros","train_loader"]
-#variables que se guardarán al finalizar cada iteración
-ep_var=["hist_perdida","acc","image_syn","optimizer_img"]
 #definir carpetas anteriores y destino
 destino=f"{parser.parse_args().modelo}_{parser.parse_args().inicializacion}" if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
 carpetaAnterior=parser.parse_args().carpetaAnterior
@@ -118,185 +114,81 @@ if carpetaAnterior==None and parser.parse_args().reanudar and destino in os.list
     carpetaAnterior=destino
 if destino not in os.listdir(carpeta):
     os.mkdir(carpeta+'/'+destino)
-if carpetaAnterior!=None:
-    #verificar la existencia de todos los archivos necesarios para reanudar el destilado (para ello se debió haber realizado por lo menos un ol)
-    reanudar=True
-    for nombre_archivo in global_var:
-        if nombre_archivo+".pt" not in os.listdir(carpeta+'/'+destino):
-            reanudar=False
-            warnings.warn(f"No se encontó el archivo {carpeta}/{destino}/{nombre_archivo}.pt, se iniciará el entrenamiento desde 0.")
-    if not reanudar:
-        carpetaAnterior=None
 ruta=carpeta+'/'+destino+'/'
-if carpetaAnterior==None:#si se va iniciar un destilado nuevo
-    print("Iniciando nuevo destilado en",ruta)
-    #obtener modelos, optimizadores y datos
-    torch.manual_seed(parser.parse_args().semilla)
-    np.random.seed(parser.parse_args().semilla)
-    #carguar imagenes
-    img,gt,_,IGNORED_LABELS,_,_= get_dataset(parser.parse_args().conjunto,"Datasets/")
-    gt=np.array(gt,dtype=np.int32)
-    hiperparametros={
-        'dataset':parser.parse_args().conjunto,
-        'model':parser.parse_args().modelo,
-        'folder':'./Datasets/',
-        'cuda':parser.parse_args().dispositivo,
-        'runs': 1,
-        'training_sample': 0.8,
-        'sampling_mode': 'random',
-        'class_balancing': False,
-        'test_stride': 1,
-        'flip_augmentation': False,
-        'radiation_augmentation': False,
-        'mixture_augmentation': False,
-        'with_exploration': False,
-        'n_classes':np.unique(gt).size,
-        'n_bands':img.shape[-1],
-        'ignored_labels':IGNORED_LABELS,
-        'device': device
-    }
-    #redefinir las etiquetas entre 0 y num_clases puesto que se ignorará la etiqueta 0
-    if 0 in hiperparametros["ignored_labels"]:
-      gt=gt-1
-      hiperparametros["ignored_labels"]=(
-          torch.tensor(hiperparametros["ignored_labels"])-1
-          ).tolist()
-    clases=np.unique(gt)
-    num_classes=clases.size
-    for etiqueta_ingnorada in hiperparametros["ignored_labels"]:
-        if etiqueta_ingnorada in clases:
-            num_classes=num_classes-1
-    del clases
-    hiperparametros["n_classes"]=num_classes
-    primer_red,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
-    #se guarda una copia de esa red para utilizar una misma inicializacion de pesos en validación
-    summary(primer_red)
-    #pesos originales
-    orig_pesos=copy.deepcopy(primer_red.state_dict())
-    train_gt,test_gt=sample_gt(gt,
-                               hiperparametros["training_sample"],
-                               mode=hiperparametros["sampling_mode"])
-    train_gt, val_gt = sample_gt(train_gt, 0.8, mode="random")
-    dst_train = HyperX(img, train_gt, **hiperparametros)
-    train_loader=DataLoader(dst_train,batch_size=hiperparametros["batch_size"],shuffle=True)
-    dst_test=HyperX(img,test_gt,**hiperparametros)
-    test_loader=DataLoader(dst_test,batch_size=len(dst_test),shuffle=True)
-    dst_val=HyperX(img, val_gt, **hiperparametros)
-    val_loader= DataLoader(dst_val,batch_size=len(dst_val),shuffle=True)
-    del test_gt,val_gt,train_gt,dst_val,dst_test
-    #channel=img.shape[-1]
-    #preprocesar datos reales
-    images_all = []
-    labels_all = []
-    indices_class = [[] for c in range(num_classes)]
-    images_all = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))] # Save the images (1,1,28,28)
-    labels_all = [int(dst_train[i][1]) for i in range(len(dst_train))] # Save the labels
-    for i, lab in enumerate(labels_all): # Save the index of each class labels
-        indices_class[lab].append(i)
-    images_all = torch.cat(images_all, dim=0).to(device) # Cat images along the batch dimension
-    labels_all = torch.tensor(labels_all, dtype=torch.long, device=device) # Make the labels a tensor
-    for c in range(num_classes):
-        print('class c = %d: %d real images'%(c, len(indices_class[c]))) # Prints how many labels are for each class
-    ipc=parser.parse_args().ipc
-    #etiquetas sintéticas de la forma [0,0,1,1,...,num_classes-1] cada etiqueta repitiendose ipc veces.
-    label_syn=torch.repeat_interleave(torch.arange(num_classes,requires_grad=False),ipc)
-    #Inicialización de imagenes sintéticas
-    tam=list(images_all.shape)
-    tam[0]=num_classes*ipc
+if carpetaAnterior!=None:
+    ruta_anterior=carpeta+'/'+carpetaAnterior+'/'
+del carpeta,destino
+hiperDest=vars(parser.parse_args())if carpetaAnterior==None else torch.load(ruta_anterior+"hiperDest.pt")
+#obtener modelos, optimizadores y datos
+torch.manual_seed(hiperDest["semilla"])
+np.random.seed(hiperDest["semilla"])
+#carguar datos, modelo optimizador y pérdida de entrenamiento
+dst_train,_,val_loader,primer_red,optimizador_red,criterion,hiperparametros=datosYred(hiperDest["modelo"],hiperDest["conjunto"],parser.parse_args().dispositivo)
+summary(primer_red)
+#pesos originales
+orig_pesos=copy.deepcopy(primer_red.state_dict())
+images_all,labels_all,indices_class=vars_all(dst_train,hiperparametros["n_classes"])
+del dst_train
+for c in range(hiperparametros["n_classes"]):
+    print('class c = %d: %d real images'%(c, len(indices_class[c]))) # Prints how many labels are for each class
+ipc=hiperDest["ipc"]
+if carpetaAnterior==None:
+    print("Iniciando nuevo destilado en ",ruta)
+    label_syn=torch.repeat_interleave(torch.arange(hiperparametros["n_classes"]),ipc)
     if parser.parse_args().inicializacion=="muestreo":
-        image_syn=torch.empty(tam,device=device)
-        import secrets
-        for i,clase in enumerate(label_syn):
-            image_syn[i]=images_all[secrets.choice(indices_class[clase])]
-        image_syn=image_syn.clone().detach().requires_grad_(True)
+        image_syn=coreset(images_all,indices_class,label_syn)
+        image_syn.requires_grad_()
     else:
+        tam=list(images_all.shape)
+        tam[0]=hiperparametros["n_classes"]*ipc
         image_syn=torch.rand(tam,requires_grad=True,device=device)
-    del tam
-    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg, momentum=0.5)
-    #variables necesarias para reanudar destilado
+        del tam
     if parser.parse_args().historial:
         historial_imagenes_sinteticas=[]
     hist_perdida=[]
     acc_list=[]
     max_acc=-0.1
-    #guardar variables globales
-    for variable,archivo in zip(
-        [
-            test_loader,
-            val_loader,
-            images_all,
-            labels_all,
-            label_syn,
-            indices_class,
-            hiperparametros,
-            train_loader
-        ],
-        global_var
-    ):
-        torch.save(variable,ruta+archivo+".pt")
-    #durante el destilado no se utilizará esta variable
-    del test_loader,img,gt
+    torch.save(hiperDest,ruta+"hiperDest.pt")
+    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg, momentum=0.5)
 else:#se va a reanudar un entrenatiento previo
-    print("Reanudando entrenamiento en",ruta)
-    #obtener modelos, optimizadores y datos
-    del global_var[0]#no es necesario cargar test_loader
-    ruta_anterior=carpeta+'/'+carpetaAnterior+'/'
-    #carguar las variables de global_var y ol_var
-    (val_loader,
-     images_all,
-     labels_all,
-     label_syn,
-     indices_class,
-     hiperparametros,
-     train_loader)=tuple(
-         torch.load(ruta+archivo+".pt",map_location=device)for archivo in global_var
-     )
-    #modelo y optimizadores
-    primer_red,optimizador_red,criterion,_= get_model(hiperparametros["model"],
-                                               hiperparametros["device"],**hiperparametros)
-    #restablecer el estado del generador de números pseudoaleatorios
+    print("Reanudando entrenamiento en",carpetaAnterior)
     torch.set_rng_state(torch.load(ruta_anterior+"tensorSemilla.pt"))
-    #carguar las variables de ep_var
-    hist_perdida=torch.load(ruta+"hist_perdida.pt")if os.path.exists(ruta+"hist_perdida.pt")else []
-    acc_list=torch.load(ruta+"acc_aum.pt")if os.path.exists(ruta+"acc_aum.pt")else []
-    max_acc=-0.1 if acc_list==[]else max(acc_list)
-    image_syn=torch.load(ruta+"image_syn.pt")
-    optimizer_img=torch.load(ruta+"optimizer_img.pt")
-    if type(image_syn)==list:
-        #en el entrenamiento anterior el argumento --model fue True, image_syn es realemente el último elemento de ese historial
-        historial_imagenes_sinteticas=copy.deepcopy(image_syn)
-        image_syn=image_syn[-1]
-    num_classes=hiperparametros["n_classes"]-1
-    hiperparametros["n_classes"]=hiperparametros["n_classes"]-1
-    ipc=int(len(label_syn)/hiperparametros["n_classes"])
-print("Los resultados se guardarán en ",ruta)
+    label_syn=torch.repeat_interleave(torch.arange(hiperparametros["n_classes"]),ipc)
+    if hiperDest["historial"]:
+        historial_imagenes_sinteticas=torch.load(ruta_anterior+"hist_img.pt",map_location=hiperparametros["cuda"])
+    image_syn=torch.load(ruta_anterior+"image_syn.pt",map_location=hiperparametros["cuda"])
+    hist_perdida=torch.load(ruta_anterior+"hist_perdida.pt")
+    acc_list=torch.load(ruta_anterior+"acc_list.pt")
+    max_acc=max(acc_list)
+    optimizer_img=torch.load(ruta_anterior+"optimizer_img.pt")
+    print("Los resultados se guardarán en ",ruta)
 #optimizer_img for synthetic data
 planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"max",patience=100,verbose=True)
-ciclo=tqdm(range(len(hist_perdida),parser.parse_args().iteraciones+1))
+ciclo=tqdm(range(len(hist_perdida),hiperDest["iteraciones"]+1))
 #definir la funcion que generará muestras nuevas para el aumento de datos
-if parser.parse_args().tecAumento!="None":
+if hiperDest["tecAumento"]!="None":
     aumentador={
             "ruido":lambda tensor:tensor+(torch.rand(tensor.shape)/4+0.85),
             "escalamiento":lambda tensor:tensor*(torch.rand(1).item()/4+0.85),
             "potencia":lambda tensor:torch.pow(tensor,torch.ran(1).item()/4+0.85)
-        }[parser.parse_args().tecAumento]
+        }[hiperDest["tecAumento"]]
 for iteracion in ciclo:
-    ciclo.set_description_str(f"Iteración {iteracion}/{parser.parse_args().iteraciones}")
+    ciclo.set_description_str(f"Iteración {iteracion}/{hiperDest['iteraciones']}")
     #actualizar imágenes sintéticas
     #reiniciar pesos
-    net,_,_,_= get_model(hiperparametros["model"],hiperparametros["device"],**hiperparametros)
+    net,_,_,_= get_model(hiperparametros["model"],device,**hiperparametros)
     net.train()
     perdida=torch.tensor(0.0).to(device)
     for parametros in list(net.parameters()):
         parametros.requires_grad = False
-    for clase in range(num_classes):
+    for clase in range(hiperparametros["n_classes"]):
         #salida sin aumento
         img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
         img_sin=image_syn[clase*ipc:(clase+1)*ipc]
         #aplicar aumento
-        if parser.parse_args().tecAumento!="None":
-            img_real=aumento(aumentador,parser.parse_args().factAumento,img_real)
-            img_sin=aumento(aumentador,parser.parse_args().factAumento,img_sin)
+        if hiperDest["tecAumento"]!="None":
+            img_real=aumento(aumentador,hiperDest["factAumento"],img_real)
+            img_sin=aumento(aumentador,hiperDest["factAumento"],img_sin)
         #aplicar embebido
         salida_real=embebido(net,img_real).detach()
         output_sin=embebido(net,img_sin)
@@ -308,7 +200,7 @@ for iteracion in ciclo:
     #guardar generador de números pseuadoaleatorios
     torch.save(torch.get_rng_state(),ruta+"tensorSemilla.pt")
     #guardar registros de ol
-    if parser.parse_args().historial:
+    if hiperDest["historial"]:
         historial_imagenes_sinteticas.append(copy.deepcopy(image_syn).to("cpu"))
         torch.save(historial_imagenes_sinteticas,ruta+"hist_img.pt")        
     #validar red
@@ -340,6 +232,8 @@ for iteracion in ciclo:
         max_acc=acc
     acc_list.append(acc)
     hist_perdida.append(perdida.item())
-    for variable,archivo in zip((hist_perdida,acc_list,image_syn,optimizer_img),ep_var):
-        torch.save(variable,ruta+archivo+".pt")
-    tqdm.write(f"iteración {iteracion} pérdida destilado {hist_perdida[-1]} acc:{acc}")
+    torch.save(hist_perdida,ruta+"hist_perdida.pt")
+    torch.save(image_syn,ruta+"image_syn.pt")
+    torch.save(acc_list,ruta+"acc_list.pt")
+    torch.save(optimizer_img,ruta+"optimizer_img.pt")
+    tqdm.write(f"iteración {iteracion} pérdida destilado {perdida.item()} acc:{acc}")

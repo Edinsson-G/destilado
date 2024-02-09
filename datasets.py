@@ -9,7 +9,10 @@ import torch.utils
 import torch.utils.data
 import os
 from tqdm import tqdm
+from models import get_model
+from utiles import sample_gt
 import secrets
+from torch.utils.data import DataLoader
 try:
     # Python 3
     from urllib.request import urlretrieve
@@ -433,13 +436,67 @@ class HyperX(torch.utils.data.Dataset):
             data = data.unsqueeze(0)
         return data, label
 #funcion para extraer un conjunto coreset
-def coreset(images_all,indices_class,etq,ipc=None,etq_cor=None):
-    if etq_cor==None:
-        etq_cor=torch.repeat_interleave(torch.arange(n_clases),ipc,device=etq.device)
-    n_clases=len(torch.unique(etq))
+def coreset(images_all,indices_class,etq_cor):
     tam=list(images_all.shape)
     tam[0]=len(etq_cor)
     img_cor=torch.empty(tam,device=images_all.device)
     for i,clase in enumerate(etq_cor):
         img_cor[i]=images_all[secrets.choice(indices_class[clase])]
-    return img_cor,etq_cor
+    return img_cor
+def datosYred(modelo,conjunto,dispositivo):
+    img,gt,_,IGNORED_LABELS,_,_= get_dataset(conjunto,"Datasets/")
+    gt=np.array(gt,dtype=np.int32)
+    hiperparametros={
+        'dataset':conjunto,
+        'model':modelo,
+        'folder':'./Datasets/',
+        'cuda':"cpu"if dispositivo<0 else f"cuda:{dispositivo}",
+        'runs': 1,
+        'training_sample': 0.8,
+        'sampling_mode': 'random',
+        'class_balancing': False,
+        'test_stride': 1,
+        'flip_augmentation': False,
+        'radiation_augmentation': False,
+        'mixture_augmentation': False,
+        'with_exploration': False,
+        'n_classes':np.unique(gt).size,
+        'n_bands':img.shape[-1],
+        'ignored_labels':IGNORED_LABELS,
+        'device': dispositivo
+    }
+    #redefinir las etiquetas entre 0 y num_clases puesto que se ignorará la etiqueta 0
+    if 0 in hiperparametros["ignored_labels"]:
+      gt=gt-1
+      hiperparametros["ignored_labels"]=(
+          torch.tensor(hiperparametros["ignored_labels"])-1
+          ).tolist()
+    clases=np.unique(gt)
+    num_classes=clases.size
+    for etiqueta_ingnorada in hiperparametros["ignored_labels"]:
+        if etiqueta_ingnorada in clases:
+            num_classes=num_classes-1
+    hiperparametros["n_classes"]=num_classes
+    red,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],hiperparametros["cuda"],**hiperparametros)
+    train_gt,test_gt=sample_gt(gt,
+                               hiperparametros["training_sample"],
+                               mode=hiperparametros["sampling_mode"])
+    train_gt, val_gt = sample_gt(train_gt, 0.8, mode="random")
+    dst_train = HyperX(img, train_gt, **hiperparametros)
+    dst_test=HyperX(img,test_gt,**hiperparametros)
+    test_loader=DataLoader(dst_test,batch_size=len(dst_test),shuffle=True)
+    dst_val=HyperX(img, val_gt, **hiperparametros)
+    val_loader= DataLoader(dst_val,batch_size=len(dst_val),shuffle=True)
+    return dst_train,test_loader,val_loader,red,optimizador_red,criterion,hiperparametros
+def vars_all(dst_train,n_clases,dispositivo):
+    #preprocesar datos reales
+    images_all = []
+    labels_all = []
+    indices_class = [[] for _ in range(n_clases)]
+    images_all = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))] # Save the images (1,1,28,28)
+    labels_all = [int(dst_train[i][1]) for i in range(len(dst_train))] # Save the labels
+    for i, lab in enumerate(labels_all): # Save the index of each class labels
+        indices_class[lab].append(i)
+    images_all = torch.cat(images_all, dim=0) # Cat images along the batch dimension
+    labels_all = torch.tensor(labels_all, dtype=torch.long, device=images_all.device) # Make the labels a tensor
+    return images_all,labels_all,indices_class

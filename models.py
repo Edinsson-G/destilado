@@ -23,7 +23,8 @@ def get_model(name,dispositivo, **kwargs):
         criterion: PyTorch loss Function
         kwargs: hyperparameters with sane defaults
     """
-    device = kwargs.setdefault("device", torch.device("cpu"))
+    #device = kwargs.setdefault("device", torch.device("cpu"))
+    device=dispositivo
     n_classes = kwargs["n_classes"]
     n_bands = kwargs["n_bands"]
     weights = torch.ones(n_classes)

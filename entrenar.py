@@ -4,13 +4,14 @@ from entrenamiento import train
 from torch.utils.data import TensorDataset,DataLoader
 from models import get_model
 from datasets import coreset
-from utiles import aumento
+import warnings
+from datasets import datosYred
+import os
 parser=argparse.ArgumentParser(description="realizar entrenamientos para comprobar el funcionamiento del destilado.")
 parser.add_argument(
     "--carpetaAnterior",
     type=str,
-    required=True,
-    help="Nombre de la carpeta en la que se almacenan los datos que se utilizarán para el entrenamiento, debe estar dentro de la carpeta resultados."
+    help="carpeta del archivo Mejor.pt y/o hiperDest.pt a utilizar, requerida si se va entrenar con datos destilados."
 )
 parser.add_argument(
     "--dispositivo",
@@ -32,19 +33,76 @@ parser.add_argument(
     help="Especificar si se realizará el entrenamiento con los datos reales (archivo images_all.pt y labels_all.pt) o destilados (imgs.pt y label_syn.pt)"
 )
 parser.add_argument(
-    "--carpetaDestino",
+    "--destino",
     type=str,
-    help="Carpeta en la que se guardarán los registros de este entrenamiento"
+    help="Carpeta en la que se guardarán los registros de este entrenamiento, por defecto se escogerá la carpeta anterior"
 )
-parser.add_argument("--epocas",type=int,default=100,help="Cantidad de epocas.")
+parser.add_argument(
+    "--modelo",
+    type=str,
+    choices=["nn","hamida","chen","li","hu"],
+    help="Nombre del modelo a usar (para tipoDatos coreset y reales), también se puede especificar por medio de un archivo hiperDest.pt pero si se especifica aquí tendrá prioridad."
+)
+parser.add_argument(
+    "--ipc",
+    type=int,
+    help="indices por clase (para tipoDatos coreset solamente), también se puede especificar por medio de un archivo hiperDest.pt; pero si se especifica aquí tendrá prioridad."
+)
+parser.add_argument("--epocas",type=int,default=100,help="Cantidad de epocas, también se puede especificar por medio de un archivo hiperDest.pt; pero si se especifica aquí tendrá prioridad.")
+parser.add_argument(
+    "--guardar",
+    type=bool,
+    help="decide si guardar o no registros en disco de este entrenamiento"
+)
+#definir en que carpeta se almacenarán los registros de este entrenamiento
 carpeta="resultados/"
-ruta_anterior=carpeta+parser.parse_args().carpetaAnterior+'/'
-carpetaDestino=parser.parse_args().carpetaAnterior if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
+if parser.parse_args().guardar:
+    destino=parser.parse_args().carpetaAnterior if parser.parse_args().destino==None else parser.parse_args().destino
+    if destino==None:
+        exit("Se especificó que se guardaran registros pero no se especificó un nombre para la carpeta en la que se deben guardar")
+    elif not os.path.isdir(carpeta+destino):
+        os.mkdir(carpeta+destino)
+        print("Se creó la carpeta",carpeta+destino)
+    print("Los registros se guardarán en",carpeta+destino)
+    destino=carpeta+destino+'/'
+else:
+    if parser.parse_args().destino==None:
+        print("No se guardarán registros de este entrenamiento.")
+    else:
+        warnings.warn("Se especificó una carpeta de destino pero la opción guardar se especificó cómo falsa; por lo tanto no se guardará ningún registro.")
+    destino=None
+if parser.parse_args().carpetaAnterior==None:
+    exit("se necesita especificar una carpeta para realizar este entrenamiento.")
+else:
+    ruta_anterior=carpeta+parser.parse_args().carpetaAnterior+'/'
+hiperDest=torch.load(ruta_anterior+"hiperDest.pt")if os.path.isfile(ruta_anterior+"hiperDest.pt")else None
+dispositivo="cpu"if parser.parse_args().dispositivo<0 else f"cuda{parser.parse_args().dispositivo}"
+#definir nombre del modelo a entrenar
+if parser.parse_args().modelo==None:
+    if hiperDest==None:
+        exit("No se conoce el nombre del modelo a entrenar")
+    modelo=hiperDest["modelo"]
+else:
+    modelo=parser.parse_args().modelo
+#definir nombre del conjunto
+if parser.parse_args().conjunto==None:
+    if hiperDest==None:
+        exit("No se conoce el nombre del conjunto.")
+    conjunto=hiperDest["conjunto"]
+else:
+    conjunto=parser.parse_args().conjunto
+#carguar datos de entrenamiento, validación y prueba
+if parser.parse_args().tipoDatos=="destilados":
+    _,test_loader,val_loader,red,optimizador_red,criterion,hiperparametros=
+    img=torch.load(
+        ruta_anterior+"Mejor.pt",
+        map_location=dispositivo
+    )
+    etq=torch.repeat_interleave(torch.arange(hiperparametros["n_classes"]),ipc)
+    
+
 #cargar y actualizar hiperparametros (los cambios no se sobreescribiran en hiperparametros.pt)
-hiperparametros=torch.load(ruta_anterior+"hiperparametros.pt")
-hiperparametros["cuda"]=parser.parse_args().dispositivo
-hiperparametros["device"]=torch.device("cpu" if parser.parse_args().dispositivo<0 else "cuda:"+str(parser.parse_args().dispositivo))
-torch.manual_seed(parser.parse_args().semilla)
+hiperDest
 print("Algoritmo ejecutándose en",hiperparametros["device"],"\n\n")
 #cargua de los datos de entrenamiento
 if parser.parse_args().tipoDatos=="reales":
