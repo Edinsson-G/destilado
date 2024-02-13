@@ -2,6 +2,7 @@ from ignite.metrics import Accuracy
 import torch
 from tqdm import tqdm
 import copy
+import sys
 class AverageMeter(object):
     """Computes and stores the average and current value"""
 
@@ -33,6 +34,8 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
     #ciclo=tqdm(data_loader,total=len(data_loader), colour="red")
     ciclo=tqdm(range(1,epoch+1),colour="red")
     if val_loader==None:
+        #inicializar con el máximo valor flotante soportado por la máquina
+        minPerd=sys.float_info.max#minima pérdida alzanzada hasta ahora
         net.train()
         for e in ciclo:
             perdida=AverageMeter()
@@ -41,6 +44,12 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
                 optimizer,net,loss,criterion,_=retropropagacion(data,target,device,optimizer,net,criterion)
                 perdida.update(loss.item(),data.size(0))
                 ciclo.set_postfix(**{"pérdida":perdida.avg})
+            #guardar pesos con menor pérdida promedio
+            if perdida.avg<minPerd:
+                pesos=copy.deepcopy(net.state_dict())
+                minPerd=perdida.avg
+        net.eval()
+        net.load_state_dict(pesos)
         retornar=(net,)
     else:
         acc_ent_hist=[]

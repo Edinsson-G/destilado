@@ -79,7 +79,7 @@ else:
     destino=None
 ruta_anterior=None if parser.parse_args().carpetaAnterior==None else carpeta+parser.parse_args().carpetaAnterior+'/'
 hiperDest=torch.load(ruta_anterior+"hiperDest.pt")if ruta_anterior!=None and os.path.isfile(ruta_anterior+"hiperDest.pt")else None
-dispositivo="cpu"if parser.parse_args().dispositivo<0 else f"cuda{parser.parse_args().dispositivo}"
+dispositivo="cpu"if parser.parse_args().dispositivo<0 else f"cuda:{parser.parse_args().dispositivo}"
 #carguar datos de entrenamiento, validación y prueba
 modelo=parser.parse_args().modelo if parser.parse_args().modelo!=None else hiperDest["modelo"]if hiperDest!=None else exit("No se conoce el nombre del modelo a entrenar")
 conjunto=parser.parse_args().conjunto if parser.parse_args().conjunto!=None else hiperDest["conjunto"] if hiperDest!=None else exit("No se conoce el nombre del conjunto.")
