@@ -168,7 +168,7 @@ if carpetaAnterior==None:
         acc_list=[]
         max_acc=-0.1
     torch.save(hiperDest,ruta+"hiperDest.pt")
-    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg, momentum=0.5,weight_decay=0.00001)
+    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg, momentum=0.5)
 else:#se va a reanudar un entrenatiento previo
     print("Reanudando entrenamiento en",carpetaAnterior)
     torch.set_rng_state(torch.load(ruta_anterior+"tensorSemilla.pt"))
