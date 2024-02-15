@@ -74,7 +74,7 @@ parser.add_argument(
     "--tecAumento",
     type=str,
     choices=["ruido","escalamiento","potencia","None"],
-    default="None",
+    default="escalamiento",
     help="Tecnica con la que se hará el aumento de datos, obligatoria si fracAumento es positiva"
 )
 parser.add_argument(
@@ -101,7 +101,6 @@ parser.add_argument(
     default=500,
     help="cantidad de epocas en etapa de validación."
 )
-#torch.set_default_device(device)
 if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
     exit("Se especificó un factor de aumento de aumento pero no un método de aumento.")
 elif parser.parse_args().factAumento<0:
@@ -168,7 +167,9 @@ if carpetaAnterior==None:
         acc_list=[]
         max_acc=-0.1
     torch.save(hiperDest,ruta+"hiperDest.pt")
-    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg, momentum=0.5)
+    #, momentum=0.5
+    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg)
+    #optimizer_img=torch.optim.Adam([image_syn], lr=parser.parse_args().lrImg)
 else:#se va a reanudar un entrenatiento previo
     print("Reanudando entrenamiento en",carpetaAnterior)
     torch.set_rng_state(torch.load(ruta_anterior+"tensorSemilla.pt"))
@@ -183,7 +184,7 @@ else:#se va a reanudar un entrenatiento previo
     optimizer_img=torch.load(ruta_anterior+"optimizer_img.pt")
     print("Los resultados se guardarán en ",ruta)
 if parser.parse_args().epocas==0:
-    planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"min",patience=100,verbose=True)
+    planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"min",patience=100,verbose=False)
 else:
     planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"max",patience=100,verbose=True)
 ciclo=tqdm(range(len(hist_perdida),hiperDest["iteraciones"]+1))
@@ -230,6 +231,7 @@ for iteracion in ciclo:
         if perdida.item()<minPerd:
             torch.save(image_syn.detach(),ruta+"Mejor.pt")
             minPerd=perdida.item()
+        planificador.step(perdida.item())
     else:
         #validar red
         #restablecer los pesos a los primeros generados

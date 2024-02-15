@@ -11,7 +11,6 @@ import os
 from tqdm import tqdm
 from models import get_model
 from utiles import sample_gt
-import secrets
 from torch.utils.data import DataLoader
 try:
     # Python 3
@@ -366,7 +365,6 @@ class HyperX(torch.utils.data.Dataset):
         )
         self.labels = [self.label[x, y] for x, y in self.indices]
         np.random.shuffle(self.indices)
-
     @staticmethod
     def flip(*arrays):
         horizontal = np.random.random() > 0.5
@@ -441,9 +439,11 @@ def coreset(images_all,indices_class,etq_cor):
     tam[0]=len(etq_cor)
     img_cor=torch.empty(tam,device=images_all.device)
     for i,clase in enumerate(etq_cor):
-        img_cor[i]=images_all[secrets.choice(indices_class[clase])]
+        #img_cor[i]=images_all[secrets.choice(indices_class[clase])]
+        ind=indices_class[clase]
+        img_cor[i]=images_all[ind[torch.randint(len(ind)-1,(1,)).item()]]
     return img_cor
-def datosYred(modelo,conjunto,dispositivo):
+def datosYred(modelo,conjunto,dispositivo,tipo):
     img,gt,_,IGNORED_LABELS,_,_= get_dataset(conjunto,"Datasets/")
     gt=np.array(gt,dtype=np.int32)
     hiperparametros={
