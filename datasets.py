@@ -443,7 +443,7 @@ def coreset(images_all,indices_class,etq_cor):
         ind=indices_class[clase]
         img_cor[i]=images_all[ind[torch.randint(len(ind)-1,(1,)).item()]]
     return img_cor
-def datosYred(modelo,conjunto,dispositivo,tipo):
+def datosYred(modelo,conjunto,dispositivo):
     img,gt,_,IGNORED_LABELS,_,_= get_dataset(conjunto,"Datasets/")
     gt=np.array(gt,dtype=np.int32)
     hiperparametros={
