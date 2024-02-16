@@ -80,7 +80,7 @@ parser.add_argument(
 parser.add_argument(
     "--inicializacion",
     type=str,
-    choices=["coreset","aleatora"],
+    choices=["coreset","aleatoria"],
     help="Inicialización de las imágenes destiladas, muestreo significa seleccionar aleatoriamente muestras del conjunto de entrenamiento original y aleatoriedad significa inicializarlas siguiendo una distribución uniforme con números entre 0 y 1.",
     default="muestreo"
 )
@@ -98,9 +98,10 @@ parser.add_argument(
 parser.add_argument(
     "--epocas",
     type=int,
-    default=500,
+    default=100,
     help="cantidad de epocas en etapa de validación."
 )
+#torch.set_default_device(device)
 if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
     exit("Se especificó un factor de aumento de aumento pero no un método de aumento.")
 elif parser.parse_args().factAumento<0:
@@ -213,6 +214,9 @@ for iteracion in ciclo:
             img_real=aumento(aumentador,hiperDest["factAumento"],img_real)
             img_sin=aumento(aumentador,hiperDest["factAumento"],img_sin)
         #aplicar embebido
+        if hiperDest["modelo"]=="hu":
+            img_real=torch.unsqueeze(img_real,1)
+            img_sin=torch.unsqueeze(img_sin,1)
         salida_real=embebido(net,img_real).detach()
         output_sin=embebido(net,img_sin)
         #funcion de perdida
