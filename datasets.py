@@ -11,7 +11,7 @@ import os
 from tqdm import tqdm
 from models import get_model
 from utiles import sample_gt
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader,TensorDataset
 try:
     # Python 3
     from urllib.request import urlretrieve
@@ -465,12 +465,6 @@ def datosYred(modelo,conjunto,dispositivo):
         'ignored_labels':IGNORED_LABELS,
         'device': dispositivo
     }
-    #redefinir las etiquetas entre 0 y num_clases puesto que se ignorará la etiqueta 0
-    if 0 in hiperparametros["ignored_labels"]:
-      gt=gt-1
-      hiperparametros["ignored_labels"]=(
-          torch.tensor(hiperparametros["ignored_labels"])-1
-          ).tolist()
     clases=np.unique(gt)
     num_classes=clases.size
     for etiqueta_ingnorada in hiperparametros["ignored_labels"]:
@@ -482,10 +476,35 @@ def datosYred(modelo,conjunto,dispositivo):
                                hiperparametros["training_sample"],
                                mode=hiperparametros["sampling_mode"])
     train_gt, val_gt = sample_gt(train_gt, 0.8, mode="random")
-    dst_train = HyperX(img, train_gt, **hiperparametros)
-    dst_test=HyperX(img,test_gt,**hiperparametros)
+    #redefinir las etiquetas entre 0 y num_clases puesto que se ignorará la etiqueta 0
+    dst=HyperX(img, train_gt, **hiperparametros)
+    imagenes =  torch.cat([torch.unsqueeze(dst[i][0], dim=0) for i in range(len(dst))],dim=0) # Save the images (1,1,28,28)
+    etiquetas = torch.tensor([int(dst[i][1]) for i in range(len(dst))],device=hiperparametros["cuda"]) # Save the labels
+    #revolver
+    n=len(etiquetas)
+    for a in range(n):
+        b=torch.randint(0,n,(1,)).item()
+        #intercambiar imagen
+        temp=imagenes[a]
+        imagenes[a]=imagenes[b]
+        imagenes[b]=temp
+        #intercambiar etiqueta
+        temp=etiquetas[a]
+        etiquetas[a]=etiquetas[b]
+        etiquetas[b]=temp
+    if 0 in hiperparametros["ignored_labels"]:
+      etiquetas=etiquetas-1
+      hiperparametros["ignored_labels"]=(
+          torch.tensor(hiperparametros["ignored_labels"])-1
+          ).tolist()
+    #dst_test=HyperX(img,test_gt,**hiperparametros)
+    n_test=int(n*0.2)
+    n_train=int((n-n_test)*0.8)
+    dst_train=TensorDataset(imagenes[:n_train],etiquetas[:n_train])
+    dst_test=TensorDataset(imagenes[n_train:n_train+n_test],etiquetas[n_train:n_train+n_test])
+    dst_val=TensorDataset(imagenes[n_train+n_test:],etiquetas[n_train+n_test:])
     test_loader=DataLoader(dst_test,batch_size=len(dst_test),shuffle=True)
-    dst_val=HyperX(img, val_gt, **hiperparametros)
+    #dst_val=HyperX(img, val_gt, **hiperparametros)
     val_loader= DataLoader(dst_val,batch_size=len(dst_val),shuffle=True)
     return dst_train,test_loader,val_loader,red,optimizador_red,criterion,hiperparametros
 def vars_all(dst_train,n_clases):

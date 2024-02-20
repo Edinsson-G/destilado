@@ -83,9 +83,10 @@ dispositivo="cpu"if parser.parse_args().dispositivo<0 else f"cuda:{parser.parse_
 #carguar datos de entrenamiento, validación y prueba
 modelo=parser.parse_args().modelo if parser.parse_args().modelo!=None else hiperDest["modelo"]if hiperDest!=None else exit("No se conoce el nombre del modelo a entrenar")
 conjunto=parser.parse_args().conjunto if parser.parse_args().conjunto!=None else hiperDest["conjunto"] if hiperDest!=None else exit("No se conoce el nombre del conjunto.")
-if hiperDest!=None:
-    torch.manual_seed(hiperDest["semilla"])
-    np.random.seed(hiperDest["semilla"])
+semilla=hiperDest["semilla"]if hiperDest!=None else 0
+torch.manual_seed(semilla)
+np.random.seed(semilla)
+del semilla
 dst_train,test_loader,val_loader,_,_,_,hiperparametros=datosYred(
 modelo,conjunto,parser.parse_args().dispositivo)
 if parser.parse_args().tipoDatos=="reales":
@@ -103,13 +104,13 @@ else:
         #_,test_loader,val_loader,red,optimizador_red,criterion,hiperparametros=
         if ruta_anterior==None:
             exit("Para entrenar datos destilados debe especificarla carpeta en la que se encuentran alojados (archivo Mejor.pt).")
-        if not os.path.isfile(ruta_anterior+"Mejor.pt"):
-            exit("no se encuentran los datos destilados (Mejor.pt) en "+ruta_anterior)
+        if not os.path.isfile(ruta_anterior+"image_syn.pt"):
+            exit("no se encuentran los datos destilados (image_syn.pt) en "+ruta_anterior)
         del dst_train
         img=torch.load(
-            ruta_anterior+"Mejor.pt",
+            ruta_anterior+"image_syn.pt",
             map_location=dispositivo
-        )
+        ).detach()
     else:#coreset
         images_all,_,indices_class=vars_all(dst_train,hiperparametros["n_classes"])
         img=coreset(images_all,indices_class,etq)
@@ -129,15 +130,16 @@ red,perdida,accEnt,accVal,accTest=train(
     optimizador,
     criterion,
     carguador,
-    hiperDest["epocas"]if hiperDest!=None else parser.parse_args().epocas,
+    parser.parse_args().epocas,
     test_loader,
     val_loader,
     hiperparametros["cuda"]
 )
+print("Accuracy de testeo: {}".format(accTest))
 if destino!=None:
     for variable,archivo in zip([red.state_dict(),perdida,accEnt,accVal],
                                 ["pesos","perdida","accTrain","accVal"]):
         torch.save(variable,destino+f"/{archivo}Datos{parser.parse_args().tipoDatos}.pt")
     #guardar accuracy de testeo
-    with open(carpeta+destino+"/accTestDatosdestilados.txt", "w") as txtfile:
-        print("Accuracy de testeo para datos destilados: {}".format(accTest), file=txtfile)
+    with open(destino+"accTestDatos"+parser.parse_args().tipoDatos+".txt", "w") as txtfile:
+        print("Accuracy de testeo: {}".format(accTest), file=txtfile)

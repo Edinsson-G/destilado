@@ -221,7 +221,6 @@ class Baseline(nn.Module):
         self.apply(self.weight_init)
 
     def forward(self, x):
-        #x = F.relu(self.fc1(x.to("cpu"))).to("cpu")
         x = F.relu(self.fc1(x))
         if self.use_dropout:
             x = self.dropout(x)

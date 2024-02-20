@@ -233,7 +233,7 @@ for iteracion in ciclo:
     if parser.parse_args().epocas==0:
         #conservar las imágenes de la menor pérdida
         if perdida.item()<minPerd:
-            torch.save(image_syn.detach(),ruta+"Mejor.pt")
+            torch.save(image_syn.detach(),ruta+"image_syn.pt")
             minPerd=perdida.item()
         planificador.step(perdida.item())
     else:
