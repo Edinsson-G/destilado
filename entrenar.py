@@ -104,11 +104,11 @@ else:
         #_,test_loader,val_loader,red,optimizador_red,criterion,hiperparametros=
         if ruta_anterior==None:
             exit("Para entrenar datos destilados debe especificarla carpeta en la que se encuentran alojados (archivo Mejor.pt).")
-        if not os.path.isfile(ruta_anterior+"image_syn.pt"):
-            exit("no se encuentran los datos destilados (image_syn.pt) en "+ruta_anterior)
+        if not os.path.isfile(ruta_anterior+"Mejor.pt"):
+            exit("no se encuentran los datos destilados (Mejor.pt) en "+ruta_anterior)
         del dst_train
         img=torch.load(
-            ruta_anterior+"image_syn.pt",
+            ruta_anterior+"Mejor.pt",
             map_location=dispositivo
         ).detach()
     else:#coreset

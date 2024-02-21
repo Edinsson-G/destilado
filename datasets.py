@@ -452,9 +452,9 @@ def datosYred(modelo,conjunto,dispositivo):
         'folder':'./Datasets/',
         'cuda':"cpu"if dispositivo<0 else f"cuda:{dispositivo}",
         'runs': 1,
-        'training_sample': 0.8,
+        'training_sample': 0.99,
         'sampling_mode': 'random',
-        'class_balancing': False,
+        'class_balancing': True,
         'test_stride': 1,
         'flip_augmentation': False,
         'radiation_augmentation': False,
@@ -475,7 +475,7 @@ def datosYred(modelo,conjunto,dispositivo):
     train_gt,test_gt=sample_gt(gt,
                                hiperparametros["training_sample"],
                                mode=hiperparametros["sampling_mode"])
-    train_gt, val_gt = sample_gt(train_gt, 0.8, mode="random")
+    #train_gt, val_gt = sample_gt(train_gt, 0.8, mode="random")
     #redefinir las etiquetas entre 0 y num_clases puesto que se ignorará la etiqueta 0
     dst=HyperX(img, train_gt, **hiperparametros)
     imagenes =  torch.cat([torch.unsqueeze(dst[i][0], dim=0) for i in range(len(dst))],dim=0) # Save the images (1,1,28,28)

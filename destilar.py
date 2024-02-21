@@ -62,7 +62,7 @@ parser.add_argument(
     "--iteraciones",
     type=int,
     help="Cantidad total de iteraciones a realizar.",
-    default=1000
+    default=200
 )
 parser.add_argument(
     "--factAumento",
