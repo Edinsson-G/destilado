@@ -12,6 +12,12 @@ from tqdm import tqdm
 from models import get_model
 from utiles import sample_gt
 from torch.utils.data import DataLoader,TensorDataset
+from torch.utils.data import TensorDataset
+import jax.random
+from coreax import ArrayData, KernelHerding, RandomSample,SquaredExponentialKernel
+from coreax.kernel import median_heuristic
+from coreax.reduction import MapReduce,SizeReduce
+
 try:
     # Python 3
     from urllib.request import urlretrieve
@@ -434,15 +440,42 @@ class HyperX(torch.utils.data.Dataset):
             data = data.unsqueeze(0)
         return data, label
 #funcion para extraer un conjunto coreset
-def coreset(images_all,indices_class,etq_cor):
+def coreset(images_all,indices_class,ipc,muestreo,escalable,semilla):
     tam=list(images_all.shape)
-    tam[0]=len(etq_cor)
-    img_cor=torch.empty(tam,device=images_all.device)
-    for i,clase in enumerate(etq_cor):
-        #img_cor[i]=images_all[secrets.choice(indices_class[clase])]
-        ind=indices_class[clase]
-        img_cor[i]=images_all[ind[torch.randint(len(ind)-1,(1,)).item()]]
-    return img_cor
+    tam[0]=len(indices_class)*ipc
+    dispositivo=images_all.device
+    img_cor=np.empty(tam)
+    images_all=images_all.cpu().numpy()
+    if muestreo=="herding":
+        for clase in range(len(indices_class)):
+            #filtrar imagenes de esta clase
+            img_clase=images_all[indices_class[clase]]
+            length_scale=median_heuristic(
+                img_clase[np.random.default_rng(semilla).choice(
+                    len(indices_class[clase]),
+                    min(len(indices_class[clase]), 1_000),
+                    replace=True
+                )]
+            )
+            obj_coreset=KernelHerding(
+                jax.random.key(semilla),
+                kernel=SquaredExponentialKernel(length_scale=length_scale if length_scale>0 else 0.01)
+            )
+            obj_coreset.fit(
+                original_data=ArrayData.load(img_clase),
+                strategy=MapReduce(coreset_size=ipc, leaf_size=200)if escalable else SizeReduce(coreset_size=ipc)
+            )
+            i=clase*ipc
+            img_cor[i:i+ipc]=obj_coreset.coreset
+    else:
+        #muestreo uniforme
+        for clase in range(len(indices_class)):
+            img_clase=images_all[indices_class[clase]]
+            obj_coreset=RandomSample(jax.random.key(semilla),unique=False)
+            obj_coreset.fit(original_data=ArrayData.load(img_clase),strategy=MapReduce(coreset_size=ipc, leaf_size=200)if escalable else SizeReduce(coreset_size=ipc))
+            i=clase*ipc
+            img_cor[i:i+ipc]=obj_coreset.coreset
+    return torch.tensor(img_cor,dtype=torch.float32,device=dispositivo)
 def datosYred(modelo,conjunto,dispositivo):
     img,gt,_,IGNORED_LABELS,_,_= get_dataset(conjunto,"Datasets/")
     gt=np.array(gt,dtype=np.int32)

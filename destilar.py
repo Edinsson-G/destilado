@@ -80,9 +80,9 @@ parser.add_argument(
 parser.add_argument(
     "--inicializacion",
     type=str,
-    choices=["coreset","aleatoria"],
-    help="Inicialización de las imágenes destiladas, muestreo significa seleccionar aleatoriamente muestras del conjunto de entrenamiento original y aleatoriedad significa inicializarlas siguiendo una distribución uniforme con números entre 0 y 1.",
-    default="muestreo"
+    choices=["ruido","aleatorio","herding"],
+    help="Inicialización de las imágenes destiladas, aleatorio significa seleccionar aleatoriamente muestras del conjunto de entrenamiento original y aleatoriedad significa inicializarlas siguiendo una distribución uniforme con números entre 0 y 1.",
+    default="aleatorio"
 )
 parser.add_argument(
     "--carpetaDestino",
@@ -101,6 +101,12 @@ parser.add_argument(
     default=100,
     help="cantidad de epocas en etapa de validación."
 )
+parser.add_argument(
+    "--coreset_escalable",
+    type=bool,
+    default=False,
+    help="En caso de inicializar las muestras utilizando un método de coreset y ser verdadero se utilzará un algoritmo escalable para evitar problemas de memoria."
+)
 #torch.set_default_device(device)
 if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
     exit("Se especificó un factor de aumento de aumento pero no un método de aumento.")
@@ -115,7 +121,7 @@ carpeta="resultados"
 if carpeta not in os.listdir('.'):
     os.mkdir(carpeta)
 #definir carpetas anteriores y destino
-destino=f"{parser.parse_args().modelo}_{parser.parse_args().inicializacion}" if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
+destino='_'.join([parser.parse_args().modelo,parser.parse_args().conjunto,f"ipc{parser.parse_args().ipc}"]) if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
 carpetaAnterior=parser.parse_args().carpetaAnterior
 if carpetaAnterior==None and parser.parse_args().reanudar and destino in os.listdir(carpeta):
     carpetaAnterior=destino
@@ -150,14 +156,16 @@ ipc=hiperDest["ipc"]
 if carpetaAnterior==None:
     print("Iniciando nuevo destilado en ",ruta)
     label_syn=torch.repeat_interleave(torch.arange(hiperparametros["n_classes"]),ipc)
-    if parser.parse_args().inicializacion=="muestreo":
-        image_syn=coreset(images_all,indices_class,label_syn)
-        image_syn.requires_grad_()
-    else:
+    if parser.parse_args().inicializacion=="ruido":
         tam=list(images_all.shape)
         tam[0]=hiperparametros["n_classes"]*ipc
         image_syn=torch.rand(tam,requires_grad=True,device=device)
         del tam
+    else:
+        #image_syn=coreset(images_all,indices_class,label_syn,parser.parse_args().inicializacion)
+        image_syn=coreset(images_all,indices_class,ipc,parser.parse_args().inicializacion,parser.parse_args().coreset_escalable,parser.parse_args().semilla)
+        graficar(image_syn.cpu(),label_syn)
+        image_syn.requires_grad_()
     if parser.parse_args().historial:
         historial_imagenes_sinteticas=[]
     hist_perdida=[]

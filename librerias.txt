@@ -7,3 +7,5 @@ scikit-learn
 tqdm
 pytorch-ignite
 torchinfo
+jax
+coreax

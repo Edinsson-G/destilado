@@ -7,6 +7,7 @@ from datasets import coreset,datosYred,vars_all
 import warnings
 import os
 import numpy as np
+from utiles import graficar
 parser=argparse.ArgumentParser(description="realizar entrenamientos para comprobar el funcionamiento del destilado.")
 parser.add_argument(
     "--carpetaAnterior",
@@ -28,9 +29,9 @@ parser.add_argument(
 parser.add_argument(
     "--tipoDatos",
     type=str,
-    choices=["reales","destilados","coreset"],
+    choices=["reales","destilados","aleatorio","herding"],
     default="destilados",
-    help="Especificar si se realizará el entrenamiento con los datos reales (archivo images_all.pt y labels_all.pt) o destilados (imgs.pt y label_syn.pt)"
+    help="Especificar si se realizará el entrenamiento con los datos reales (archivo images_all.pt y labels_all.pt), destilados (imgs.pt y label_syn.pt), coreset de muestreo aleatorio o coreset herding"
 )
 parser.add_argument(
     "--destino",
@@ -60,6 +61,11 @@ parser.add_argument(
     type=str,
     choices=["IndianPines","PaviaC","PaviaU","Botswana"]
 )
+parser.add_argument(
+    "--coreset_escalable",
+    type=bool,
+    help="Si es verdadero y el tipo de datos es una técnica de coreset entonces se ejecutará de manera escalable para evitar problemas de memoria."
+)
 #definir en que carpeta se almacenarán los registros de este entrenamiento
 carpeta="resultados/"
 if parser.parse_args().guardar:
@@ -87,7 +93,7 @@ semilla=hiperDest["semilla"]if hiperDest!=None else 0
 torch.manual_seed(semilla)
 np.random.seed(semilla)
 del semilla
-dst_train,test_loader,val_loader,_,_,_,hiperparametros=datosYred(
+dst_train,test_loader,val_loader,red,_,_,hiperparametros=datosYred(
 modelo,conjunto,parser.parse_args().dispositivo)
 if parser.parse_args().tipoDatos=="reales":
     carguador=DataLoader(
@@ -113,7 +119,7 @@ else:
         ).detach()
     else:#coreset
         images_all,_,indices_class=vars_all(dst_train,hiperparametros["n_classes"])
-        img=coreset(images_all,indices_class,etq)
+        img=coreset(images_all,indices_class,hiperDest["ipc"]if parser.parse_args().ipc==None else parser.parse_args().ipc,parser.parse_args().tipoDatos,parser.parse_args().coreset_escalable,0)
     carguador=DataLoader(
             TensorDataset(img,etq),
             batch_size=hiperparametros["batch_size"],
