@@ -164,7 +164,6 @@ if carpetaAnterior==None:
     else:
         #image_syn=coreset(images_all,indices_class,label_syn,parser.parse_args().inicializacion)
         image_syn=coreset(images_all,indices_class,ipc,parser.parse_args().inicializacion,parser.parse_args().coreset_escalable,parser.parse_args().semilla)
-        graficar(image_syn.cpu(),label_syn)
         image_syn.requires_grad_()
     if parser.parse_args().historial:
         historial_imagenes_sinteticas=[]

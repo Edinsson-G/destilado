@@ -36,7 +36,7 @@ def get_model(name,dispositivo, **kwargs):
         kwargs.setdefault("patch_size", 1)
         center_pixel = True
         model = Baseline(n_bands, n_classes, kwargs.setdefault("dropout", False))
-        lr = kwargs.setdefault("learning_rate", 0.0001)
+        lr = kwargs.setdefault("learning_rate",0.001 if kwargs["dataset"]=="PaviaC"else 0.0001)
         optimizer = optim.Adam(model.parameters(), lr=lr)
         criterion = nn.CrossEntropyLoss(weight=kwargs["weights"])
         kwargs.setdefault("epoch", 100)
