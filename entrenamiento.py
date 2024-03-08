@@ -31,9 +31,8 @@ def retropropagacion(data,target,device,optimizer,net,criterion):
 def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loader=None,device=torch.device("cpu")):
     net.to(device)
     net.train()
-    #ciclo=tqdm(data_loader,total=len(data_loader), colour="red")
-    ciclo=tqdm(range(1,epoch+1),colour="red")
     if val_loader==None:
+        ciclo=tqdm(range(1,epoch+1),colour="red")
         #inicializar con el máximo valor flotante soportado por la máquina
         minPerd=sys.float_info.max#minima pérdida alzanzada hasta ahora
         net.train()
@@ -56,7 +55,10 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
         acc_val_hist=[]
         perdida=[]
         maxcc=-1
-        for e in ciclo:
+        #cantidad de epocas sin mejora
+        estancamiento=0
+        e=0
+        while estancamiento<300 and e<epoch:
             net.train()
             train_loss = AverageMeter()
             train_acc = AverageMeter()
@@ -113,6 +115,12 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
                 #guardar los mejores pesos hasta el momento
                 pesos=copy.deepcopy(net.state_dict())
                 maxcc=correct
+                estancamiento=0
+            else:
+                estancamiento+=1
+            e=e+1
+        if e<epoch:
+            print("Interrupción temprana")
         #devolver los mejores pesos
         net.eval()
         net.load_state_dict(pesos)

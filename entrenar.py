@@ -7,7 +7,6 @@ from datasets import coreset,datosYred,vars_all
 import warnings
 import os
 import numpy as np
-from utiles import graficar
 parser=argparse.ArgumentParser(description="realizar entrenamientos para comprobar el funcionamiento del destilado.")
 parser.add_argument(
     "--carpetaAnterior",
@@ -66,6 +65,12 @@ parser.add_argument(
     type=bool,
     help="Si es verdadero y el tipo de datos es una técnica de coreset entonces se ejecutará de manera escalable para evitar problemas de memoria."
 )
+parser.add_argument(
+    "--repeticiones",
+    type=int,
+    default=0,
+    help="cantidad de veces que se repetirá el entrenamiento"
+)
 #definir en que carpeta se almacenarán los registros de este entrenamiento
 carpeta="resultados/"
 if parser.parse_args().guardar:
@@ -90,11 +95,13 @@ dispositivo="cpu"if parser.parse_args().dispositivo<0 else f"cuda:{parser.parse_
 modelo=parser.parse_args().modelo if parser.parse_args().modelo!=None else hiperDest["modelo"]if hiperDest!=None else exit("No se conoce el nombre del modelo a entrenar")
 conjunto=parser.parse_args().conjunto if parser.parse_args().conjunto!=None else hiperDest["conjunto"] if hiperDest!=None else exit("No se conoce el nombre del conjunto.")
 semilla=hiperDest["semilla"]if hiperDest!=None else 0
+torch.manual_seed(0)
+np.random.seed(0)
+dst_train,test_loader,val_loader,red,_,_,hiperparametros=datosYred(
+modelo,conjunto,parser.parse_args().dispositivo)
 torch.manual_seed(semilla)
 np.random.seed(semilla)
 del semilla
-dst_train,test_loader,val_loader,red,_,_,hiperparametros=datosYred(
-modelo,conjunto,parser.parse_args().dispositivo)
 if parser.parse_args().tipoDatos=="reales":
     carguador=DataLoader(
         dst_train,
@@ -129,18 +136,22 @@ print("Algoritmo ejecutándose en",dispositivo,"\n\n")
 print("Iniciando entrenamiento con datos",parser.parse_args().tipoDatos)
 #obtener red con los pesos definidos por la semilla especificada
 torch.manual_seed(parser.parse_args().semilla)
-red,optimizador,criterion,_=get_model(modelo,hiperparametros["cuda"],**hiperparametros)
-del modelo,conjunto
-red,perdida,accEnt,accVal,accTest=train(
-    red,
-    optimizador,
-    criterion,
-    carguador,
-    parser.parse_args().epocas,
-    test_loader,
-    val_loader,
-    hiperparametros["cuda"]
-)
+#accuracies de testeo
+accs_test=torch.empty(parser.parse_args().repeticiones+1)
+for i in range(parser.parse_args().repeticiones+1):
+    red,optimizador,criterion,_=get_model(modelo,hiperparametros["cuda"],**hiperparametros)
+    print("experimento",i+1)
+    red,perdida,accEnt,accVal,accTest=train(
+        red,
+        optimizador,
+        criterion,
+        carguador,
+        parser.parse_args().epocas,
+        test_loader,
+        val_loader,
+        hiperparametros["cuda"]
+    )
+    accs_test[i]=accTest
 print("Accuracy de testeo: {}".format(accTest))
 if destino!=None:
     for variable,archivo in zip([red.state_dict(),perdida,accEnt,accVal],
@@ -148,4 +159,4 @@ if destino!=None:
         torch.save(variable,destino+f"/{archivo}Datos{parser.parse_args().tipoDatos}.pt")
     #guardar accuracy de testeo
     with open(destino+"accTestDatos"+parser.parse_args().tipoDatos+".txt", "w") as txtfile:
-        print("Accuracy de testeo: {}".format(accTest), file=txtfile)
+        print(f"Accuracy de testeo: {torch.mean(accs_test)}+-{torch.std(accs_test)/(parser.parse_args().repeticiones+1)**0.5}", file=txtfile)

@@ -17,7 +17,7 @@ import jax.random
 from coreax import ArrayData, KernelHerding, RandomSample,SquaredExponentialKernel
 from coreax.kernel import median_heuristic
 from coreax.reduction import MapReduce,SizeReduce
-
+import math
 try:
     # Python 3
     from urllib.request import urlretrieve
@@ -450,6 +450,14 @@ def coreset(images_all,indices_class,ipc,muestreo,escalable,semilla):
         for clase in range(len(indices_class)):
             #filtrar imagenes de esta clase
             img_clase=images_all[indices_class[clase]]
+            #vectorizar la imagen si no está vectorizada
+            dim=list(img_clase.shape)
+            if len(dim)>2:
+                img_clase=np.reshape(
+                    img_clase,
+                    (dim[0],math.prod(dim[1:]))
+                )
+            #entrenar el método de herding
             length_scale=median_heuristic(
                 img_clase[np.random.default_rng(semilla).choice(
                     len(indices_class[clase]),
@@ -466,7 +474,8 @@ def coreset(images_all,indices_class,ipc,muestreo,escalable,semilla):
                 strategy=MapReduce(coreset_size=ipc, leaf_size=200)if escalable else SizeReduce(coreset_size=ipc)
             )
             i=clase*ipc
-            img_cor[i:i+ipc]=obj_coreset.coreset
+            img_cor[i:i+ipc]=images_all[indices_class[clase]][obj_coreset.coreset_indices]
+            #img_cor[i:i+ipc]=obj_coreset.coreset
     else:
         #muestreo uniforme
         for clase in range(len(indices_class)):
