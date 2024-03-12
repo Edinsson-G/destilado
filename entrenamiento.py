@@ -36,6 +36,7 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
         #inicializar con el máximo valor flotante soportado por la máquina
         minPerd=sys.float_info.max#minima pérdida alzanzada hasta ahora
         net.train()
+        estancamiento=0
         for e in ciclo:
             perdida=AverageMeter()
             ciclo.set_description(f"Entrenamiento [{e}/{epoch}]")
@@ -47,6 +48,11 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
             if perdida.avg<minPerd:
                 pesos=copy.deepcopy(net.state_dict())
                 minPerd=perdida.avg
+                estancamiento=0
+            else:
+                estancamiento+=1
+            if estancamiento>300:
+                break
         net.eval()
         net.load_state_dict(pesos)
         retornar=(net,)
@@ -76,22 +82,22 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
 
                 train_acc.update(correct, data.size(0))
                 
-            dict_metrics = dict(loss=train_loss.avg)
+            #dict_metrics = dict(loss=train_loss.avg)
 
 
-            ciclo.set_description(f'Network Training [{e} / {epoch}]')
-            ciclo.set_postfix(**dict_metrics)
+            #ciclo.set_description(f'Network Training [{e} / {epoch}]')
+            #ciclo.set_postfix(**dict_metrics)
             loss_iter.append(train_loss.avg)
             accuracy.reset()
             acc_ent_hist.append(torch.mean(torch.tensor(acc_ent_iter)))
             perdida.append(torch.mean(torch.tensor(loss_iter)))
             #iniciar con la validación
-            data_loop_test = tqdm(val_loader, total=len(val_loader), colour='green')
+            #data_loop_test = tqdm(val_loader, total=len(val_loader), colour='green')
             #data_loop_test = enumerate(test_loader)
 
             net.eval()
             # Run the testing loop for one epoch
-            for data, target in data_loop_test:
+            for data, target in val_loader:
 
                 # Load the data into the GPU if required
                 #data, target = data.to(device), target.to(device)-1
@@ -105,17 +111,19 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
                 test_acc.update(correct, data.size(0))
                 acc_val_hist.append(float(correct))
                 #test_acc1=float(correct)
-                dict_metrics = dict(loss_test=test_loss.avg,acc_test=test_acc.avg)
+                #dict_metrics = dict(loss_test=test_loss.avg,acc_test=test_acc.avg)
 
-                data_loop_test.set_description(f'Network Testing [{e} / {epoch}]')
-                data_loop_test.set_postfix(**dict_metrics)
+                #data_loop_test.set_description(f'Network Testing [{e} / {epoch}]')
+                #data_loop_test.set_postfix(**dict_metrics)
 
                 accuracy.reset()
+            print(f"época {e}/{epoch}  entrenamiento: pérdida {train_loss.avg} validación: pérdida {loss.item()} acc {float(correct)}")
             if correct>maxcc:
                 #guardar los mejores pesos hasta el momento
                 pesos=copy.deepcopy(net.state_dict())
                 maxcc=correct
                 estancamiento=0
+                print("Nuevo mejor accuracy")
             else:
                 estancamiento+=1
             e=e+1

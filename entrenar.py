@@ -48,7 +48,7 @@ parser.add_argument(
     type=int,
     help="indices por clase (para tipoDatos coreset solamente), también se puede especificar por medio de un archivo hiperDest.pt; pero si se especifica aquí tendrá prioridad."
 )
-parser.add_argument("--epocas",type=int,default=100,help="Cantidad de epocas, también se puede especificar por medio de un archivo hiperDest.pt, el cual tendrá prioridad")
+parser.add_argument("--epocas",type=int,default=1000,help="Cantidad de epocas, también se puede especificar por medio de un archivo hiperDest.pt, el cual tendrá prioridad")
 parser.add_argument(
     "--guardar",
     type=bool,
@@ -63,12 +63,13 @@ parser.add_argument(
 parser.add_argument(
     "--coreset_escalable",
     type=bool,
-    help="Si es verdadero y el tipo de datos es una técnica de coreset entonces se ejecutará de manera escalable para evitar problemas de memoria."
+    help="Si es verdadero y el tipo de datos es una técnica de coreset entonces se ejecutará de manera escalable para evitar problemas de memoria.",
+    default=False
 )
 parser.add_argument(
     "--repeticiones",
     type=int,
-    default=0,
+    default=20,
     help="cantidad de veces que se repetirá el entrenamiento"
 )
 #definir en que carpeta se almacenarán los registros de este entrenamiento
@@ -132,15 +133,16 @@ else:
             batch_size=hiperparametros["batch_size"],
             shuffle=True
         )
+    #graficar(img,etq)
 print("Algoritmo ejecutándose en",dispositivo,"\n\n")
 print("Iniciando entrenamiento con datos",parser.parse_args().tipoDatos)
 #obtener red con los pesos definidos por la semilla especificada
 torch.manual_seed(parser.parse_args().semilla)
 #accuracies de testeo
-accs_test=torch.empty(parser.parse_args().repeticiones+1)
-for i in range(parser.parse_args().repeticiones+1):
+accs_test=torch.empty(parser.parse_args().repeticiones)
+for i in range(parser.parse_args().repeticiones):
+    print("experimento",i)
     red,optimizador,criterion,_=get_model(modelo,hiperparametros["cuda"],**hiperparametros)
-    print("experimento",i+1)
     red,perdida,accEnt,accVal,accTest=train(
         red,
         optimizador,
@@ -159,4 +161,4 @@ if destino!=None:
         torch.save(variable,destino+f"/{archivo}Datos{parser.parse_args().tipoDatos}.pt")
     #guardar accuracy de testeo
     with open(destino+"accTestDatos"+parser.parse_args().tipoDatos+".txt", "w") as txtfile:
-        print(f"Accuracy de testeo: {torch.mean(accs_test)}+-{torch.std(accs_test)/(parser.parse_args().repeticiones+1)**0.5}", file=txtfile)
+        print(f"Accuracy de testeo: {torch.mean(accs_test)}+-{torch.std(accs_test)/(parser.parse_args().repeticiones)**0.5}", file=txtfile)

@@ -55,14 +55,14 @@ parser.add_argument(
 parser.add_argument(
     "--lrImg",
     type=float,
-    default=0.01,
+    default=0.0001,
     help="Tasa de aprendizaje del algoritmo de destilamiento, requerido solo en caso de iniciar un nuevo destilado."
 )
 parser.add_argument(
     "--iteraciones",
     type=int,
     help="Cantidad total de iteraciones a realizar.",
-    default=200
+    default=500
 )
 parser.add_argument(
     "--factAumento",
@@ -98,7 +98,7 @@ parser.add_argument(
 parser.add_argument(
     "--epocas",
     type=int,
-    default=100,
+    default=1000,
     help="cantidad de epocas en etapa de validación."
 )
 parser.add_argument(
@@ -174,6 +174,7 @@ if carpetaAnterior==None:
     else:
         acc_list=[]
         max_acc=-0.1
+    estancamiento=0
     torch.save(hiperDest,ruta+"hiperDest.pt")
     #, momentum=0.5
     optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg)
@@ -189,6 +190,7 @@ else:#se va a reanudar un entrenatiento previo
     if parser.parse_args().epocas==0 and os.path.isdir(ruta_anterior+"acc_list.pt"):
         acc_list=torch.load(ruta_anterior+"acc_list.pt")
         max_acc=max(acc_list)
+    estancamiento=len(acc_list)-acc_list.index(max_acc)
     optimizer_img=torch.load(ruta_anterior+"optimizer_img.pt")
     print("Los resultados se guardarán en ",ruta)
 if parser.parse_args().epocas==0:
@@ -204,6 +206,9 @@ if hiperDest["tecAumento"]!="None":
             "potencia":lambda tensor:torch.pow(tensor,torch.ran(1).item()/4+0.85)
         }[hiperDest["tecAumento"]]
 for iteracion in ciclo:
+    if estancamiento>300:
+        print("Finalización temprana")
+        break
     ciclo.set_description_str(f"Iteración {iteracion}/{hiperDest['iteraciones']}")
     #actualizar imágenes sintéticas
     #reiniciar pesos
@@ -272,6 +277,10 @@ for iteracion in ciclo:
             #guardar las mejores firmas en un archivo aparte
             torch.save(image_syn.detach(),f"{ruta}Mejor.pt")
             max_acc=acc
+            tqdm.write("Mejor accuracy")
+            estancamiento=0
+        else:
+            estancamiento+=1
         acc_list.append(acc)
         torch.save(acc_list,ruta+"acc_list.pt")
     hist_perdida.append(perdida.item())
