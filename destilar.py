@@ -55,19 +55,19 @@ parser.add_argument(
 parser.add_argument(
     "--lrImg",
     type=float,
-    default=0.0001,
+    default=1e-3,
     help="Tasa de aprendizaje del algoritmo de destilamiento, requerido solo en caso de iniciar un nuevo destilado."
 )
 parser.add_argument(
     "--iteraciones",
     type=int,
     help="Cantidad total de iteraciones a realizar.",
-    default=500
+    default=1000
 )
 parser.add_argument(
     "--factAumento",
     type=int,
-    default=20,
+    default=1,
     help="Factor de aumento, cantidad de muestras nuevas a generar por cada ejemplo en el aumento de datos."
 )
 parser.add_argument(
@@ -107,7 +107,30 @@ parser.add_argument(
     default=False,
     help="En caso de inicializar las muestras utilizando un método de coreset y ser verdadero se utilzará un algoritmo escalable para evitar problemas de memoria."
 )
-#torch.set_default_device(device)
+parser.add_argument(
+    "--paciencia",
+    type=int,
+    help="iteraciones de espera antes de bajar la tasa de aprendizaje en caso de no haber disminución en la función de pérdida.",
+    default=100
+)
+parser.add_argument(
+    "--interrupcion",
+    type=int,
+    help="cantidad de disminuciones consecutivas de la tasa de aprendizaje que se debe esperar antes de finalizar tempranamente el destilado por no haber disminución en la tasa de aprendizaje",
+    default=4
+)
+parser.add_argument(
+    "--per_val",
+    type=int,
+    help="periodo de validacion: cada cuantas iteraciones se hará un entrenamiento para validar el progreso del destiado",
+    default=10
+)
+parser.add_argument(
+    "--std",
+    type=bool,
+    help="Definir si se quiere tomar en cuenta o no la desviación estándar en la función de costo.",
+    default=True
+)
 if (parser.parse_args().factAumento>0) and (parser.parse_args().tecAumento==None):
     exit("Se especificó un factor de aumento de aumento pero no un método de aumento.")
 elif parser.parse_args().factAumento<0:
@@ -121,7 +144,7 @@ carpeta="resultados"
 if carpeta not in os.listdir('.'):
     os.mkdir(carpeta)
 #definir carpetas anteriores y destino
-destino='_'.join([parser.parse_args().modelo,parser.parse_args().conjunto,f"ipc{parser.parse_args().ipc}"]) if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
+destino='_'.join([parser.parse_args().modelo,parser.parse_args().conjunto,f"ipc{parser.parse_args().ipc}",f"{parser.parse_args().inicializacion}Inic",f"lrImg{parser.parse_args().lrImg}"]) if parser.parse_args().carpetaDestino==None else parser.parse_args().carpetaDestino
 carpetaAnterior=parser.parse_args().carpetaAnterior
 if carpetaAnterior==None and parser.parse_args().reanudar and destino in os.listdir(carpeta):
     carpetaAnterior=destino
@@ -162,23 +185,17 @@ if carpetaAnterior==None:
         image_syn=torch.rand(tam,requires_grad=True,device=device)
         del tam
     else:
-        #image_syn=coreset(images_all,indices_class,label_syn,parser.parse_args().inicializacion)
         image_syn=coreset(images_all,indices_class,ipc,parser.parse_args().inicializacion,parser.parse_args().coreset_escalable,parser.parse_args().semilla)
         image_syn.requires_grad_()
     if parser.parse_args().historial:
         historial_imagenes_sinteticas=[]
     hist_perdida=[]
-    if parser.parse_args().epocas==0:#no hacer validación
-        #inicializar con el valor máximo flotante soportado por esta máquina
-        minPerd=sys.float_info.max
-    else:
-        acc_list=[]
-        max_acc=-0.1
+    minPerd=sys.float_info.max
+    acc_list=[]
+    max_acc=-0.1
     estancamiento=0
     torch.save(hiperDest,ruta+"hiperDest.pt")
-    #, momentum=0.5
-    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg)
-    #optimizer_img=torch.optim.Adam([image_syn], lr=parser.parse_args().lrImg)
+    optimizer_img = torch.optim.SGD([image_syn], lr=parser.parse_args().lrImg,momentum=0.5)
 else:#se va a reanudar un entrenatiento previo
     print("Reanudando entrenamiento en",carpetaAnterior)
     torch.set_rng_state(torch.load(ruta_anterior+"tensorSemilla.pt"))
@@ -186,30 +203,40 @@ else:#se va a reanudar un entrenatiento previo
     if hiperDest["historial"]:
         historial_imagenes_sinteticas=torch.load(ruta_anterior+"hist_img.pt",map_location=hiperparametros["cuda"])
     image_syn=torch.load(ruta_anterior+"image_syn.pt",map_location=hiperparametros["cuda"])
+    image_syn.requires_grad_()
     hist_perdida=torch.load(ruta_anterior+"hist_perdida.pt")
     if parser.parse_args().epocas==0 and os.path.isdir(ruta_anterior+"acc_list.pt"):
         acc_list=torch.load(ruta_anterior+"acc_list.pt")
         max_acc=max(acc_list)
     estancamiento=len(acc_list)-acc_list.index(max_acc)
-    optimizer_img=torch.load(ruta_anterior+"optimizer_img.pt")
+    lr=hiperDest["lrImg"]
+    minPerd=float("inf")
+    for perdida in hist_perdida:
+        if perdida<minPerd:
+            estancamiento=0
+            minPerd=perdida
+        else:
+            estancamiento+=1
+        if estancamiento%hiperDest["paciencia"]==0 and estancamiento>0:
+            lr=lr/10
+    optimizer_img=torch.optim.SGD([image_syn], lr=lr,momentum=0.5)
     print("Los resultados se guardarán en ",ruta)
-if parser.parse_args().epocas==0:
-    planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"min",patience=100,verbose=False)
-else:
-    planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"max",patience=100,verbose=True)
+#if parser.parse_args().epocas==0:
+planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"min",patience=100,verbose=True)
+#else:
+#    planificador=torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer_img,"max",patience=100,verbose=True)
 ciclo=tqdm(range(len(hist_perdida),hiperDest["iteraciones"]+1))
 #definir la funcion que generará muestras nuevas para el aumento de datos
 if hiperDest["tecAumento"]!="None":
     aumentador={
             "ruido":lambda tensor:tensor+torch.rand(1).item()/2.5-0.2,
-            "escalamiento":lambda tensor:tensor*(torch.rand(1).item()/4+0.85),
-            "potencia":lambda tensor:torch.pow(tensor,torch.ran(1).item()/4+0.85)
+            "escalamiento":lambda tensor:tensor*(torch.rand(1).item()/5+0.9),
+            "potencia":lambda tensor:torch.pow(torch.abs(tensor),torch.rand(1).item()*0.09+1.01)
         }[hiperDest["tecAumento"]]
-for iteracion in ciclo:
-    if estancamiento>300:
-        print("Finalización temprana")
-        break
+iteracion=0
+while iteracion<hiperDest["iteraciones"] and estancamiento<=hiperDest["paciencia"]*hiperDest["interrupcion"]:
     ciclo.set_description_str(f"Iteración {iteracion}/{hiperDest['iteraciones']}")
+    ciclo.update()
     #actualizar imágenes sintéticas
     #reiniciar pesos
     net,_,_,_= get_model(hiperparametros["model"],device,**hiperparametros)
@@ -219,11 +246,13 @@ for iteracion in ciclo:
         parametros.requires_grad = False
     for clase in range(hiperparametros["n_classes"]):
         #salida sin aumento
-        img_real=get_images(clase,hiperparametros["batch_size"],indices_class,images_all).to(device)
+        img_real=get_images(clase,ipc,indices_class,images_all).to(device)
+        #print(img_real.shape)
         img_sin=image_syn[clase*ipc:(clase+1)*ipc]
         #aplicar aumento
         if hiperDest["tecAumento"]!="None":
             img_real=aumento(aumentador,hiperDest["factAumento"],img_real)
+            #print(img_real.shape)
             img_sin=aumento(aumentador,hiperDest["factAumento"],img_sin)
         #aplicar embebido
         if hiperDest["modelo"]=="hu":
@@ -232,7 +261,10 @@ for iteracion in ciclo:
         salida_real=embebido(net,img_real).detach()
         output_sin=embebido(net,img_sin)
         #funcion de perdida
-        perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)+torch.sum((torch.std(salida_real,dim=0)-torch.std(output_sin,dim=0))**2)
+        if hiperDest["std"]:
+            perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)+torch.sum((torch.std(salida_real,dim=0)-torch.std(output_sin,dim=0))**2)
+        else:
+            perdida+=torch.sum((torch.mean(salida_real,dim=0)-torch.mean(output_sin,dim=0))**2)
     optimizer_img.zero_grad()
     perdida.backward()
     optimizer_img.step()
@@ -242,15 +274,20 @@ for iteracion in ciclo:
     if hiperDest["historial"]:
         historial_imagenes_sinteticas.append(copy.deepcopy(image_syn).to("cpu"))
         torch.save(historial_imagenes_sinteticas,ruta+"hist_img.pt")
-    if parser.parse_args().epocas==0:
+    #if int(iteracion/10)==iteracion/10:
         #conservar las imágenes de la menor pérdida
-        if perdida.item()<minPerd:
-            torch.save(image_syn.detach(),ruta+"image_syn.pt")
-            minPerd=perdida.item()
-        planificador.step(perdida.item())
+    if perdida.item()<minPerd:
+        torch.save(image_syn.detach(),ruta+"Mejor_perdida.pt")
+        minPerd=perdida.item()
+        estancamiento=0
     else:
+        estancamiento+=1
+    planificador.step(perdida.item())
+    if iteracion%hiperDest["per_val"]==0 and hiperDest["epocas"]>0:
+        print(hiperDest["per_val"])
         #validar red
         #restablecer los pesos a los primeros generados
+        primer_red.eval()
         primer_red.load_state_dict(orig_pesos)
         primer_red.train()
         optimizador_red.zero_grad()
@@ -270,24 +307,21 @@ for iteracion in ciclo:
             device=device,
             epoch=parser.parse_args().epocas
         )
-        #disminuir la tasa de aprendizaje si después de 100 iteraciones la función de pérdida no ha disminuido
-        planificador.step(acc)
         #guardar registros necesarios
         if acc>max_acc:
             #guardar las mejores firmas en un archivo aparte
-            torch.save(image_syn.detach(),f"{ruta}Mejor.pt")
+            torch.save(image_syn.detach(),f"{ruta}Mejor_accuracy.pt")
             max_acc=acc
             tqdm.write("Mejor accuracy")
-            estancamiento=0
-        else:
-            estancamiento+=1
         acc_list.append(acc)
         torch.save(acc_list,ruta+"acc_list.pt")
     hist_perdida.append(perdida.item())
     torch.save(hist_perdida,ruta+"hist_perdida.pt")
     torch.save(image_syn,ruta+"image_syn.pt")
-    torch.save(optimizer_img,ruta+"optimizer_img.pt")
     if parser.parse_args().epocas==0:
         ciclo.set_postfix(**{"pérdida":perdida.item()})
     else:
         tqdm.write(f"iteración {iteracion} pérdida destilado {perdida.item()} acc:{acc}")
+    iteracion+=1
+if iteracion<hiperDest["iteraciones"]:
+    print("finalizacion temprana")

@@ -462,7 +462,7 @@ def coreset(images_all,indices_class,ipc,muestreo,escalable,semilla):
                 img_clase[np.random.default_rng(semilla).choice(
                     len(indices_class[clase]),
                     min(len(indices_class[clase]), 1_000),
-                    replace=True
+                    replace=len(indices_class[clase])<ipc
                 )]
             )
             obj_coreset=KernelHerding(
@@ -475,7 +475,6 @@ def coreset(images_all,indices_class,ipc,muestreo,escalable,semilla):
             )
             i=clase*ipc
             img_cor[i:i+ipc]=images_all[indices_class[clase]][obj_coreset.coreset_indices]
-            #img_cor[i:i+ipc]=obj_coreset.coreset
     else:
         #muestreo uniforme
         for clase in range(len(indices_class)):
@@ -495,7 +494,7 @@ def datosYred(modelo,conjunto,dispositivo):
         'cuda':"cpu"if dispositivo<0 else f"cuda:{dispositivo}",
         'runs': 1,
         'training_sample': 0.99,
-        'sampling_mode': 'random',
+        'sampling_mode': 'fixed',
         'class_balancing': True,
         'test_stride': 1,
         'flip_augmentation': False,

@@ -7,6 +7,7 @@ from datasets import coreset,datosYred,vars_all
 import warnings
 import os
 import numpy as np
+from tqdm import tqdm
 parser=argparse.ArgumentParser(description="realizar entrenamientos para comprobar el funcionamiento del destilado.")
 parser.add_argument(
     "--carpetaAnterior",
@@ -72,13 +73,19 @@ parser.add_argument(
     default=20,
     help="cantidad de veces que se repetirá el entrenamiento"
 )
+parser.add_argument(
+    "--archivo",
+    type=str,
+    help="archivo donde estan los datos a entrenar",
+    default="Mejor_perdida.pt"
+)
 #definir en que carpeta se almacenarán los registros de este entrenamiento
 carpeta="resultados/"
 if parser.parse_args().guardar:
     destino=parser.parse_args().carpetaAnterior if parser.parse_args().destino==None else parser.parse_args().destino
     if destino==None:
-        exit("Se especificó que se guardaran registros pero no se especificó un nombre para la carpeta en la que se deben guardar")
-    elif not os.path.isdir(carpeta+destino):
+        destino=f"{parser.parse_args().modelo}_{parser.parse_args().conjunto}_ipc{parser.parse_args().ipc}"
+    if not os.path.isdir(carpeta+destino):
         os.mkdir(carpeta+destino)
         print("Se creó la carpeta",carpeta+destino)
     print("Los registros se guardarán en",carpeta+destino)
@@ -118,11 +125,11 @@ else:
         #_,test_loader,val_loader,red,optimizador_red,criterion,hiperparametros=
         if ruta_anterior==None:
             exit("Para entrenar datos destilados debe especificarla carpeta en la que se encuentran alojados (archivo Mejor.pt).")
-        if not os.path.isfile(ruta_anterior+"Mejor.pt"):
+        if not os.path.isfile(ruta_anterior+parser.parse_args().archivo):
             exit("no se encuentran los datos destilados (Mejor.pt) en "+ruta_anterior)
         del dst_train
         img=torch.load(
-            ruta_anterior+"Mejor.pt",
+            ruta_anterior+parser.parse_args().archivo,
             map_location=dispositivo
         ).detach()
     else:#coreset
@@ -140,8 +147,7 @@ print("Iniciando entrenamiento con datos",parser.parse_args().tipoDatos)
 torch.manual_seed(parser.parse_args().semilla)
 #accuracies de testeo
 accs_test=torch.empty(parser.parse_args().repeticiones)
-for i in range(parser.parse_args().repeticiones):
-    print("experimento",i)
+for i in tqdm(range(parser.parse_args().repeticiones)):
     red,optimizador,criterion,_=get_model(modelo,hiperparametros["cuda"],**hiperparametros)
     red,perdida,accEnt,accVal,accTest=train(
         red,
@@ -154,11 +160,12 @@ for i in range(parser.parse_args().repeticiones):
         hiperparametros["cuda"]
     )
     accs_test[i]=accTest
-print("Accuracy de testeo: {}".format(accTest))
+    tqdm.write(f"accuracy test experimento{i}: {accTest}")
 if destino!=None:
-    for variable,archivo in zip([red.state_dict(),perdida,accEnt,accVal],
-                                ["pesos","perdida","accTrain","accVal"]):
+    for variable,archivo in zip([red.state_dict(),perdida,accEnt,accVal,accs_test],
+                                ["pesos","perdida","accTrain","accVal","accs_test"]):
         torch.save(variable,destino+f"/{archivo}Datos{parser.parse_args().tipoDatos}.pt")
     #guardar accuracy de testeo
     with open(destino+"accTestDatos"+parser.parse_args().tipoDatos+".txt", "w") as txtfile:
-        print(f"Accuracy de testeo: {torch.mean(accs_test)}+-{torch.std(accs_test)/(parser.parse_args().repeticiones)**0.5}", file=txtfile)
+        print(f"Accuracy de testeo: {torch.mean(accs_test)}+-{torch.std(accs_test)}", file=txtfile)
+print("acuracy promedio:",torch.mean(accs_test).item(),"+-",torch.std(accs_test).item())

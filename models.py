@@ -920,7 +920,7 @@ class BoulchEtAl(nn.Module):
         n = input_channels
         with torch.no_grad():
             x = torch.zeros((10, 1, self.input_channels))
-            print(x.size())
+            #print(x.size())
             while n > 1:
                 print("---------- {} ---------".format(n))
                 if n == input_channels:
@@ -931,16 +931,16 @@ class BoulchEtAl(nn.Module):
                     p1, p2 = planes, planes
                 encoder_modules.append(nn.Conv1d(p1, p2, 3, padding=1))
                 x = encoder_modules[-1](x)
-                print(x.size())
+                #print(x.size())
                 encoder_modules.append(nn.MaxPool1d(2))
                 x = encoder_modules[-1](x)
-                print(x.size())
+                #print(x.size())
                 encoder_modules.append(nn.ReLU(inplace=True))
                 x = encoder_modules[-1](x)
-                print(x.size())
+                #print(x.size())
                 encoder_modules.append(nn.BatchNorm1d(p2))
                 x = encoder_modules[-1](x)
-                print(x.size())
+                #print(x.size())
                 n = n // 2
 
             encoder_modules.append(nn.Conv1d(planes, 3, 3, padding=1))

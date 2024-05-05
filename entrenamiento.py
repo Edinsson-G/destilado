@@ -41,6 +41,8 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
             perdida=AverageMeter()
             ciclo.set_description(f"Entrenamiento [{e}/{epoch}]")
             for data,target in data_loader:
+                data=data.to(device)
+                target=target.to(device)
                 optimizer,net,loss,criterion,_=retropropagacion(data,target,device,optimizer,net,criterion)
                 perdida.update(loss.item(),data.size(0))
                 ciclo.set_postfix(**{"pérdida":perdida.avg})
@@ -62,9 +64,13 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
         perdida=[]
         maxcc=-1
         #cantidad de epocas sin mejora
+        ciclo_epoc=tqdm(total=epoch,leave=True,desc="epocas",file=sys.stderr)
         estancamiento=0
         e=0
-        while estancamiento<300 and e<epoch:
+        ciclo_epoc.update()
+        while estancamiento<1001 and e<epoch:
+            ciclo_epoc.update()
+            ciclo_epoc.refresh()
             net.train()
             train_loss = AverageMeter()
             train_acc = AverageMeter()
@@ -81,7 +87,7 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
                 train_loss.update(loss.item(), data.size(0))
 
                 train_acc.update(correct, data.size(0))
-                
+
             #dict_metrics = dict(loss=train_loss.avg)
 
 
@@ -110,25 +116,27 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
 
                 test_acc.update(correct, data.size(0))
                 acc_val_hist.append(float(correct))
+
                 #test_acc1=float(correct)
                 #dict_metrics = dict(loss_test=test_loss.avg,acc_test=test_acc.avg)
 
                 #data_loop_test.set_description(f'Network Testing [{e} / {epoch}]')
                 #data_loop_test.set_postfix(**dict_metrics)
-
-                accuracy.reset()
-            print(f"época {e}/{epoch}  entrenamiento: pérdida {train_loss.avg} validación: pérdida {loss.item()} acc {float(correct)}")
+            ciclo_epoc.set_postfix(acc_val=correct,loss_train=train_loss.avg,estancamiento=f"{estancamiento}/300")
+            accuracy.reset()
+            #print(f"época {e}/{epoch}  entrenamiento: pérdida {train_loss.avg} validación: pérdida {loss.item()} acc {float(correct)}")
             if correct>maxcc:
                 #guardar los mejores pesos hasta el momento
                 pesos=copy.deepcopy(net.state_dict())
                 maxcc=correct
                 estancamiento=0
-                print("Nuevo mejor accuracy")
+                #print("Nuevo mejor accuracy")
             else:
                 estancamiento+=1
             e=e+1
-        if e<epoch:
-            print("Interrupción temprana")
+        ciclo_epoc.close()
+        # if e<epoch:
+        #     print("Interrupción temprana")
         #devolver los mejores pesos
         net.eval()
         net.load_state_dict(pesos)
