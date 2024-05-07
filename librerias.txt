@@ -1,3 +1,11 @@
-#pytorch-lts::pytorch
-#conda-forge::torchinfo
-#joblib
+torch
+numpy
+matplotlib
+spectral
+scipy
+scikit-learn
+tqdm
+pytorch-ignite
+torchinfo
+jax
+coreax

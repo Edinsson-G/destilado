@@ -2,6 +2,7 @@ from ignite.metrics import Accuracy
 import torch
 from tqdm import tqdm
 import copy
+import sys
 class AverageMeter(object):
     """Computes and stores the average and current value"""
 
@@ -30,24 +31,46 @@ def retropropagacion(data,target,device,optimizer,net,criterion):
 def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loader=None,device=torch.device("cpu")):
     net.to(device)
     net.train()
-    #ciclo=tqdm(data_loader,total=len(data_loader), colour="red")
-    ciclo=tqdm(range(1,epoch+1),colour="red")
     if val_loader==None:
+        ciclo=tqdm(range(1,epoch+1),colour="red")
+        #inicializar con el máximo valor flotante soportado por la máquina
+        minPerd=sys.float_info.max#minima pérdida alzanzada hasta ahora
         net.train()
+        estancamiento=0
         for e in ciclo:
             perdida=AverageMeter()
             ciclo.set_description(f"Entrenamiento [{e}/{epoch}]")
             for data,target in data_loader:
+                data=data.to(device)
+                target=target.to(device)
                 optimizer,net,loss,criterion,_=retropropagacion(data,target,device,optimizer,net,criterion)
                 perdida.update(loss.item(),data.size(0))
                 ciclo.set_postfix(**{"pérdida":perdida.avg})
+            #guardar pesos con menor pérdida promedio
+            if perdida.avg<minPerd:
+                pesos=copy.deepcopy(net.state_dict())
+                minPerd=perdida.avg
+                estancamiento=0
+            else:
+                estancamiento+=1
+            if estancamiento>300:
+                break
+        net.eval()
+        net.load_state_dict(pesos)
         retornar=(net,)
     else:
         acc_ent_hist=[]
         acc_val_hist=[]
         perdida=[]
         maxcc=-1
-        for e in ciclo:
+        #cantidad de epocas sin mejora
+        ciclo_epoc=tqdm(total=epoch,leave=True,desc="epocas",file=sys.stderr)
+        estancamiento=0
+        e=0
+        ciclo_epoc.update()
+        while estancamiento<1001 and e<epoch:
+            ciclo_epoc.update()
+            ciclo_epoc.refresh()
             net.train()
             train_loss = AverageMeter()
             train_acc = AverageMeter()
@@ -64,23 +87,23 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
                 train_loss.update(loss.item(), data.size(0))
 
                 train_acc.update(correct, data.size(0))
-                
-            dict_metrics = dict(loss=train_loss.avg)
+
+            #dict_metrics = dict(loss=train_loss.avg)
 
 
-            ciclo.set_description(f'Network Training [{e} / {epoch}]')
-            ciclo.set_postfix(**dict_metrics)
+            #ciclo.set_description(f'Network Training [{e} / {epoch}]')
+            #ciclo.set_postfix(**dict_metrics)
             loss_iter.append(train_loss.avg)
             accuracy.reset()
             acc_ent_hist.append(torch.mean(torch.tensor(acc_ent_iter)))
             perdida.append(torch.mean(torch.tensor(loss_iter)))
             #iniciar con la validación
-            data_loop_test = tqdm(val_loader, total=len(val_loader), colour='green')
+            #data_loop_test = tqdm(val_loader, total=len(val_loader), colour='green')
             #data_loop_test = enumerate(test_loader)
 
             net.eval()
             # Run the testing loop for one epoch
-            for data, target in data_loop_test:
+            for data, target in val_loader:
 
                 # Load the data into the GPU if required
                 #data, target = data.to(device), target.to(device)-1
@@ -93,17 +116,27 @@ def train(net,optimizer,criterion,data_loader,epoch=100,test_loader=None,val_loa
 
                 test_acc.update(correct, data.size(0))
                 acc_val_hist.append(float(correct))
+
                 #test_acc1=float(correct)
-                dict_metrics = dict(loss_test=test_loss.avg,acc_test=test_acc.avg)
+                #dict_metrics = dict(loss_test=test_loss.avg,acc_test=test_acc.avg)
 
-                data_loop_test.set_description(f'Network Testing [{e} / {epoch}]')
-                data_loop_test.set_postfix(**dict_metrics)
-
-                accuracy.reset()
+                #data_loop_test.set_description(f'Network Testing [{e} / {epoch}]')
+                #data_loop_test.set_postfix(**dict_metrics)
+            ciclo_epoc.set_postfix(acc_val=correct,loss_train=train_loss.avg,estancamiento=f"{estancamiento}/300")
+            accuracy.reset()
+            #print(f"época {e}/{epoch}  entrenamiento: pérdida {train_loss.avg} validación: pérdida {loss.item()} acc {float(correct)}")
             if correct>maxcc:
                 #guardar los mejores pesos hasta el momento
                 pesos=copy.deepcopy(net.state_dict())
                 maxcc=correct
+                estancamiento=0
+                #print("Nuevo mejor accuracy")
+            else:
+                estancamiento+=1
+            e=e+1
+        ciclo_epoc.close()
+        # if e<epoch:
+        #     print("Interrupción temprana")
         #devolver los mejores pesos
         net.eval()
         net.load_state_dict(pesos)

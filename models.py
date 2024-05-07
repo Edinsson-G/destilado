@@ -23,7 +23,8 @@ def get_model(name,dispositivo, **kwargs):
         criterion: PyTorch loss Function
         kwargs: hyperparameters with sane defaults
     """
-    device = kwargs.setdefault("device", torch.device("cpu"))
+    #device = kwargs.setdefault("device", torch.device("cpu"))
+    device=dispositivo
     n_classes = kwargs["n_classes"]
     n_bands = kwargs["n_bands"]
     weights = torch.ones(n_classes)
@@ -35,7 +36,7 @@ def get_model(name,dispositivo, **kwargs):
         kwargs.setdefault("patch_size", 1)
         center_pixel = True
         model = Baseline(n_bands, n_classes, kwargs.setdefault("dropout", False))
-        lr = kwargs.setdefault("learning_rate", 0.0001)
+        lr = kwargs.setdefault("learning_rate",0.001 if kwargs["dataset"]=="PaviaC"else 0.0001)
         optimizer = optim.Adam(model.parameters(), lr=lr)
         criterion = nn.CrossEntropyLoss(weight=kwargs["weights"])
         kwargs.setdefault("epoch", 100)
@@ -220,7 +221,6 @@ class Baseline(nn.Module):
         self.apply(self.weight_init)
 
     def forward(self, x):
-        #x = F.relu(self.fc1(x.to("cpu"))).to("cpu")
         x = F.relu(self.fc1(x))
         if self.use_dropout:
             x = self.dropout(x)
@@ -920,7 +920,7 @@ class BoulchEtAl(nn.Module):
         n = input_channels
         with torch.no_grad():
             x = torch.zeros((10, 1, self.input_channels))
-            print(x.size())
+            #print(x.size())
             while n > 1:
                 print("---------- {} ---------".format(n))
                 if n == input_channels:
@@ -931,16 +931,16 @@ class BoulchEtAl(nn.Module):
                     p1, p2 = planes, planes
                 encoder_modules.append(nn.Conv1d(p1, p2, 3, padding=1))
                 x = encoder_modules[-1](x)
-                print(x.size())
+                #print(x.size())
                 encoder_modules.append(nn.MaxPool1d(2))
                 x = encoder_modules[-1](x)
-                print(x.size())
+                #print(x.size())
                 encoder_modules.append(nn.ReLU(inplace=True))
                 x = encoder_modules[-1](x)
-                print(x.size())
+                #print(x.size())
                 encoder_modules.append(nn.BatchNorm1d(p2))
                 x = encoder_modules[-1](x)
-                print(x.size())
+                #print(x.size())
                 n = n // 2
 
             encoder_modules.append(nn.Conv1d(planes, 3, 3, padding=1))

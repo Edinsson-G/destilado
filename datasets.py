@@ -9,7 +9,15 @@ import torch.utils
 import torch.utils.data
 import os
 from tqdm import tqdm
-import secrets
+from models import get_model
+from utiles import sample_gt
+from torch.utils.data import DataLoader,TensorDataset
+from torch.utils.data import TensorDataset
+import jax.random
+from coreax import ArrayData, KernelHerding, RandomSample,SquaredExponentialKernel
+from coreax.kernel import median_heuristic
+from coreax.reduction import MapReduce,SizeReduce
+import math
 try:
     # Python 3
     from urllib.request import urlretrieve
@@ -363,7 +371,6 @@ class HyperX(torch.utils.data.Dataset):
         )
         self.labels = [self.label[x, y] for x, y in self.indices]
         np.random.shuffle(self.indices)
-
     @staticmethod
     def flip(*arrays):
         horizontal = np.random.random() > 0.5
@@ -433,13 +440,123 @@ class HyperX(torch.utils.data.Dataset):
             data = data.unsqueeze(0)
         return data, label
 #funcion para extraer un conjunto coreset
-def coreset(images_all,indices_class,etq,ipc=None,etq_cor=None):
-    if etq_cor==None:
-        etq_cor=torch.repeat_interleave(torch.arange(n_clases),ipc,device=etq.device)
-    n_clases=len(torch.unique(etq))
+def coreset(images_all,indices_class,ipc,muestreo,escalable,semilla):
     tam=list(images_all.shape)
-    tam[0]=len(etq_cor)
-    img_cor=torch.empty(tam,device=images_all.device)
-    for i,clase in enumerate(etq_cor):
-        img_cor[i]=images_all[secrets.choice(indices_class[clase])]
-    return img_cor,etq_cor
+    tam[0]=len(indices_class)*ipc
+    dispositivo=images_all.device
+    img_cor=np.empty(tam)
+    images_all=images_all.cpu().numpy()
+    if muestreo=="herding":
+        for clase in range(len(indices_class)):
+            #filtrar imagenes de esta clase
+            img_clase=images_all[indices_class[clase]]
+            #vectorizar la imagen si no está vectorizada
+            dim=list(img_clase.shape)
+            if len(dim)>2:
+                img_clase=np.reshape(
+                    img_clase,
+                    (dim[0],math.prod(dim[1:]))
+                )
+            #entrenar el método de herding
+            length_scale=median_heuristic(
+                img_clase[np.random.default_rng(semilla).choice(
+                    len(indices_class[clase]),
+                    min(len(indices_class[clase]), 1_000),
+                    replace=len(indices_class[clase])<ipc
+                )]
+            )
+            obj_coreset=KernelHerding(
+                jax.random.key(semilla),
+                kernel=SquaredExponentialKernel(length_scale=length_scale if length_scale>0 else 0.01)
+            )
+            obj_coreset.fit(
+                original_data=ArrayData.load(img_clase),
+                strategy=MapReduce(coreset_size=ipc, leaf_size=200)if escalable else SizeReduce(coreset_size=ipc)
+            )
+            i=clase*ipc
+            img_cor[i:i+ipc]=images_all[indices_class[clase]][obj_coreset.coreset_indices]
+    else:
+        #muestreo uniforme
+        for clase in range(len(indices_class)):
+            img_clase=images_all[indices_class[clase]]
+            obj_coreset=RandomSample(jax.random.key(semilla),unique=False)
+            obj_coreset.fit(original_data=ArrayData.load(img_clase),strategy=MapReduce(coreset_size=ipc, leaf_size=200)if escalable else SizeReduce(coreset_size=ipc))
+            i=clase*ipc
+            img_cor[i:i+ipc]=obj_coreset.coreset
+    return torch.tensor(img_cor,dtype=torch.float32,device=dispositivo)
+def datosYred(modelo,conjunto,dispositivo):
+    img,gt,_,IGNORED_LABELS,_,_= get_dataset(conjunto,"Datasets/")
+    gt=np.array(gt,dtype=np.int32)
+    hiperparametros={
+        'dataset':conjunto,
+        'model':modelo,
+        'folder':'./Datasets/',
+        'cuda':"cpu"if dispositivo<0 else f"cuda:{dispositivo}",
+        'runs': 1,
+        'training_sample': 0.99,
+        'sampling_mode': 'fixed',
+        'class_balancing': True,
+        'test_stride': 1,
+        'flip_augmentation': False,
+        'radiation_augmentation': False,
+        'mixture_augmentation': False,
+        'with_exploration': False,
+        'n_classes':np.unique(gt).size,
+        'n_bands':img.shape[-1],
+        'ignored_labels':IGNORED_LABELS,
+        'device': dispositivo
+    }
+    clases=np.unique(gt)
+    num_classes=clases.size
+    for etiqueta_ingnorada in hiperparametros["ignored_labels"]:
+        if etiqueta_ingnorada in clases:
+            num_classes=num_classes-1
+    hiperparametros["n_classes"]=num_classes
+    red,optimizador_red,criterion,hiperparametros= get_model(hiperparametros["model"],hiperparametros["cuda"],**hiperparametros)
+    train_gt,test_gt=sample_gt(gt,
+                               hiperparametros["training_sample"],
+                               mode=hiperparametros["sampling_mode"])
+    #train_gt, val_gt = sample_gt(train_gt, 0.8, mode="random")
+    #redefinir las etiquetas entre 0 y num_clases puesto que se ignorará la etiqueta 0
+    dst=HyperX(img, train_gt, **hiperparametros)
+    imagenes =  torch.cat([torch.unsqueeze(dst[i][0], dim=0) for i in range(len(dst))],dim=0) # Save the images (1,1,28,28)
+    etiquetas = torch.tensor([int(dst[i][1]) for i in range(len(dst))],device=hiperparametros["cuda"]) # Save the labels
+    #revolver
+    n=len(etiquetas)
+    for a in range(n):
+        b=torch.randint(0,n,(1,)).item()
+        #intercambiar imagen
+        temp=imagenes[a]
+        imagenes[a]=imagenes[b]
+        imagenes[b]=temp
+        #intercambiar etiqueta
+        temp=etiquetas[a]
+        etiquetas[a]=etiquetas[b]
+        etiquetas[b]=temp
+    if 0 in hiperparametros["ignored_labels"]:
+      etiquetas=etiquetas-1
+      hiperparametros["ignored_labels"]=(
+          torch.tensor(hiperparametros["ignored_labels"])-1
+          ).tolist()
+    #dst_test=HyperX(img,test_gt,**hiperparametros)
+    n_test=int(n*0.2)
+    n_train=int((n-n_test)*0.8)
+    dst_train=TensorDataset(imagenes[:n_train],etiquetas[:n_train])
+    dst_test=TensorDataset(imagenes[n_train:n_train+n_test],etiquetas[n_train:n_train+n_test])
+    dst_val=TensorDataset(imagenes[n_train+n_test:],etiquetas[n_train+n_test:])
+    test_loader=DataLoader(dst_test,batch_size=len(dst_test),shuffle=True)
+    #dst_val=HyperX(img, val_gt, **hiperparametros)
+    val_loader= DataLoader(dst_val,batch_size=len(dst_val),shuffle=True)
+    return dst_train,test_loader,val_loader,red,optimizador_red,criterion,hiperparametros
+def vars_all(dst_train,n_clases):
+    #preprocesar datos reales
+    images_all = []
+    labels_all = []
+    indices_class = [[] for _ in range(n_clases)]
+    images_all = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))] # Save the images (1,1,28,28)
+    labels_all = [int(dst_train[i][1]) for i in range(len(dst_train))] # Save the labels
+    for i, lab in enumerate(labels_all): # Save the index of each class labels
+        indices_class[lab].append(i)
+    images_all = torch.cat(images_all, dim=0) # Cat images along the batch dimension
+    labels_all = torch.tensor(labels_all, dtype=torch.long, device=images_all.device) # Make the labels a tensor
+    return images_all,labels_all,indices_class

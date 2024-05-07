@@ -82,6 +82,7 @@ def aumento(funcion,replicas,img,etq=None):
                 etq=torch.cat((etq,torch.unsqueeze(etq[i],0)))
     return img if etq==None else (img,etq)
 def embebido(red,entrada):
+    #entrada=torch.unsqueeze(entrada,1)
     for capa in list(red.children())[:-2]:
         entrada=capa(entrada)
     return entrada.view(entrada.size(0),-1)
