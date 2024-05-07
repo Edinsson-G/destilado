@@ -17,7 +17,7 @@ parser=argparse.ArgumentParser(description="Destilar imagenes hiperespectrales")
 parser.add_argument(
     "--modelo",
     type=str,
-    choices=["nn","hamida","chen","li","hu"],
+    choices=["nn","hamida","li"],
     default="nn",
     help="Nombre del modelo de red neuronal a utilizar en el destilado"
 )

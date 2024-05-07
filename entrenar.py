@@ -41,7 +41,7 @@ parser.add_argument(
 parser.add_argument(
     "--modelo",
     type=str,
-    choices=["nn","hamida","chen","li","hu"],
+    choices=["nn","hamida","li"],
     help="Nombre del modelo a usar (para tipoDatos coreset y reales), también se puede especificar por medio de un archivo hiperDest.pt pero si se especifica aquí tendrá prioridad."
 )
 parser.add_argument(
